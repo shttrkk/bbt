@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import re
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,6 +13,7 @@ from pdn_scanner.config import load_config, validate_config
 from pdn_scanner.detectors import DetectionEngine
 from pdn_scanner.enums import ContentStatus, ValidationStatus
 from pdn_scanner.models import ExtractedContent, FileDescriptor, FileScanResult, RunSummary
+from pdn_scanner.quality import QualityLayer
 from pdn_scanner.reporting import write_json_report, write_markdown_report, write_result_csv, write_summary_csv
 from pdn_scanner.runtime import ScanMetrics, setup_logging, to_processing_error
 from pdn_scanner.scanner import ExtractorDispatcher, detect_format, walk_directory
@@ -53,6 +53,7 @@ def scan(
     dispatcher = ExtractorDispatcher()
     engine = DetectionEngine(cfg)
     classifier = UZClassifier(cfg)
+    quality_layer = QualityLayer(cfg)
     metrics = ScanMetrics()
     metrics.extend_errors(walker_errors)
 
@@ -60,7 +61,7 @@ def scan(
 
     for descriptor in descriptors:
         try:
-            results.append(_process_file(descriptor, cfg, dispatcher, engine, classifier))
+            results.append(_process_file(descriptor, cfg, dispatcher, engine, classifier, quality_layer))
         except Exception as exc:  # pragma: no cover - defensive runtime guard
             error_result = _build_error_result(descriptor, exc)
             results.append(error_result)
@@ -125,6 +126,7 @@ def _process_file(
     dispatcher: ExtractorDispatcher,
     engine: DetectionEngine,
     classifier: UZClassifier,
+    quality_layer: QualityLayer,
 ) -> FileScanResult:
     file_format, mime_type, format_warnings = detect_format(descriptor.path, config.scan.use_mime_detection)
     updated_descriptor = descriptor.model_copy(update={"detected_format": file_format, "mime_type": mime_type})
@@ -133,7 +135,14 @@ def _process_file(
     extraction.warnings.extend(format_warnings)
 
     detections = engine.detect(extraction) if extraction.status not in {ContentStatus.ERROR, ContentStatus.UNSUPPORTED} else []
-    assigned_uz, reasons, _ = classifier.classify(detections)
+    quality = quality_layer.assess(updated_descriptor, extraction, detections)
+    assigned_uz, reasons, _ = classifier.classify(
+        quality.detections,
+        is_template=quality.is_template,
+        is_public_doc=quality.is_public_doc,
+        is_reference_data=quality.is_reference_data,
+        quality_reasons=quality.reasons,
+    )
     errors = []
     if extraction.status == ContentStatus.ERROR:
         errors.append(
@@ -147,13 +156,20 @@ def _process_file(
     return FileScanResult(
         file=updated_descriptor,
         extraction=extraction,
-        detections=detections,
+        detections=quality.detections,
+        scan_status=_scan_status(extraction, errors),
         assigned_uz=assigned_uz,
         classification_reasons=reasons,
-        counts_by_category=_counts_by_category(detections),
-        counts_by_family=_counts_by_family(detections),
-        validated_counts_by_category=_validated_counts_by_category(detections),
-        template_like=_is_template_like(extraction, config.feature_flags.enable_template_heuristics),
+        counts_by_category=_counts_by_category(quality.detections),
+        counts_by_family=_counts_by_family(quality.detections),
+        validated_counts_by_category=_validated_counts_by_category(quality.detections),
+        validated_entities_count=quality.validated_entities_count,
+        suspicious_entities_count=quality.suspicious_entities_count,
+        confidence_summary=quality.confidence_summary,
+        is_template=quality.is_template,
+        is_public_doc=quality.is_public_doc,
+        is_reference_data=quality.is_reference_data,
+        template_like=quality.is_template,
         ocr_used=bool(extraction.metadata.get("ocr_used", False)),
         errors=errors,
     )
@@ -170,6 +186,7 @@ def _build_error_result(descriptor: FileDescriptor, exc: Exception) -> FileScanR
             metadata={"extractor": "runtime_guard"},
         ),
         detections=[],
+        scan_status="error",
         errors=[to_processing_error(exc, stage="runtime", path=descriptor.path)],
     )
 
@@ -196,12 +213,12 @@ def _validated_counts_by_category(detections) -> dict[str, int]:
     return dict(counter)
 
 
-def _is_template_like(extraction: ExtractedContent, enabled: bool) -> bool:
-    if not enabled:
-        return False
-    template_markers = (r"_{3,}", r"ФИО\s*[:_]", r"адрес\s*[:_]", r"подпись\s*[:_]")
-    combined = " ".join(extraction.text_chunks[:5])
-    return any(re.search(pattern, combined, flags=re.IGNORECASE) for pattern in template_markers)
+def _scan_status(extraction: ExtractedContent, errors: list) -> str:
+    if errors or extraction.status == ContentStatus.ERROR:
+        return "error"
+    if extraction.status == ContentStatus.UNSUPPORTED:
+        return "skipped"
+    return "ok"
 
 
 if __name__ == "__main__":

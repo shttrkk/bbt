@@ -19,6 +19,7 @@ PERSON_MARKERS = ("физическое лицо", "person", "employee", "суб
 COMPANY_MARKERS = ("ооо", "оао", "пао", "ао", "ип", "ltd", "limited", "company", "компания", "партнеры", "«")
 ADDRESS_KEYWORDS = ("address", "destination_address", "адрес", "регистрации", "проживания", "доставки")
 ADDRESS_MARKERS = ("г.", "гор.", "город", "ул.", "улица", "пр.", "пр-кт", "пер.", "бул.", "наб.", "д.", "дом", "кв.", "стр.", "обл.", "с.", "п.")
+BIRTH_DATE_KEYWORDS = ("дата рождения", "birth date", "date_of_birth", "birth_date", "dob")
 
 
 def detect_ordinary(content: ExtractedContent, config: AppConfig) -> list[DetectionResult]:
@@ -75,10 +76,11 @@ def detect_ordinary(content: ExtractedContent, config: AppConfig) -> list[Detect
         detections.extend(_detect_person_names(chunk, index, config))
         detections.extend(_detect_addresses(chunk, index, config))
 
-        if "дата рождения" in lower_chunk or "birth date" in lower_chunk:
+        if any(keyword in lower_chunk for keyword in BIRTH_DATE_KEYWORDS):
             match = re.search(r"\b\d{2}[.\-]\d{2}[.\-]\d{4}\b", chunk)
             if match:
                 value = match.group(0)
+                context_keywords = [keyword for keyword in BIRTH_DATE_KEYWORDS if keyword in lower_chunk]
                 detections.append(
                     DetectionResult(
                         category="birth_date_candidate",
@@ -89,7 +91,7 @@ def detect_ordinary(content: ExtractedContent, config: AppConfig) -> list[Detect
                         value_hash=hash_value(value, config),
                         masked_preview=mask_preview(value, config),
                         location_hints=[f"chunk:{index}"],
-                        context_keywords=["дата рождения"],
+                        context_keywords=context_keywords,
                         raw_value=value,
                         normalized_value=value,
                     )

@@ -57,11 +57,18 @@ class FileScanResult(BaseModel):
     file: FileDescriptor
     extraction: ExtractedContent
     detections: list[DetectionResult] = Field(default_factory=list)
+    scan_status: str = "ok"
     assigned_uz: UZLevel = UZLevel.NO_PDN
     classification_reasons: list[str] = Field(default_factory=list)
     counts_by_category: dict[str, int] = Field(default_factory=dict)
     counts_by_family: dict[str, int] = Field(default_factory=dict)
     validated_counts_by_category: dict[str, int] = Field(default_factory=dict)
+    validated_entities_count: int = 0
+    suspicious_entities_count: int = 0
+    confidence_summary: dict[str, int] = Field(default_factory=dict)
+    is_template: bool = False
+    is_public_doc: bool = False
+    is_reference_data: bool = False
     template_like: bool = False
     ocr_used: bool = False
     errors: list[ProcessingError] = Field(default_factory=list)

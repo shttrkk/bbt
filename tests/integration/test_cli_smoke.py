@@ -49,6 +49,14 @@ def test_cli_scan_generates_privacy_safe_reports(tmp_path: Path) -> None:
     serialized = json.dumps(payload, ensure_ascii=False)
 
     assert payload["summary"]["files_processed"] == 1
+    file_result = payload["files"][0]
+    assert "scan_status" in file_result
+    assert "validated_entities_count" in file_result
+    assert "suspicious_entities_count" in file_result
+    assert "confidence_summary" in file_result
+    assert "is_template" in file_result
+    assert "is_public_doc" in file_result
+    assert "is_reference_data" in file_result
     assert "user@example.com" not in serialized
     assert "112-233-445 95" not in serialized
     assert "4111 1111 1111 1111" not in serialized

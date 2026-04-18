@@ -38,8 +38,12 @@ def write_markdown_report(
     if top_files:
         for result in top_files:
             total = sum(detection.occurrences for detection in result.detections)
+            flags = _format_flags(result)
+            reasons = ",".join(result.classification_reasons[:3]) if result.classification_reasons else "none"
             lines.append(
-                f"- `{result.file.rel_path}` -> {result.assigned_uz.value}, detections={total}, categories={_format_categories(result)}"
+                f"- `{result.file.rel_path}` -> {result.assigned_uz.value}, detections={total}, "
+                f"validated={result.validated_entities_count}, suspicious={result.suspicious_entities_count}, "
+                f"flags={flags}, reasons={reasons}, categories={_format_categories(result)}"
             )
     else:
         lines.append("- no files with detections")
@@ -54,3 +58,14 @@ def _format_categories(result: FileScanResult) -> str:
     if not result.counts_by_category:
         return "none"
     return ", ".join(f"{key}={value}" for key, value in sorted(result.counts_by_category.items()))
+
+
+def _format_flags(result: FileScanResult) -> str:
+    flags = []
+    if result.is_template:
+        flags.append("template")
+    if result.is_public_doc:
+        flags.append("public_doc")
+    if result.is_reference_data:
+        flags.append("reference_data")
+    return ",".join(flags) if flags else "none"
