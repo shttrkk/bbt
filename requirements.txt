@@ -1,0 +1,32 @@
+# CLI / config / runtime
+typer>=0.12,<1.0
+pyyaml>=6.0,<7.0
+pydantic>=2.7,<3.0
+rich>=13.7,<14.0
+python-dotenv>=1.0,<2.0
+orjson>=3.10,<4.0
+
+# Text / document / markup extractors
+beautifulsoup4>=4.12,<5.0
+lxml>=5.2,<6.0
+python-docx>=1.1,<2.0
+striprtf>=0.0.26,<1.0
+pypdf>=4.2,<5.0
+pdfplumber>=0.11,<1.0
+
+# Tables / spreadsheets / columnar
+openpyxl>=3.1,<4.0
+xlrd>=2.0,<3.0
+pyarrow>=16.1,<18.0
+pandas>=2.2,<3.0
+
+# Image / OCR
+pillow>=10.3,<12.0
+pytesseract>=0.3.10,<1.0
+
+# Encoding / file type detection
+charset-normalizer>=3.3,<4.0
+python-magic>=0.4.27,<1.0
+
+# Tests
+pytest>=8.2,<9.0

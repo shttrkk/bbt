@@ -1,0 +1,76 @@
+supported_formats:
+  - txt
+  - csv
+  - json
+  - parquet
+  - pdf
+  - doc
+  - docx
+  - rtf
+  - xls
+  - xlsx
+  - html
+  - htm
+  - image
+  - mp4
+
+scan:
+  continue_on_error: true
+  include_hidden: false
+  follow_symlinks: false
+  use_mime_detection: true
+  max_file_size_mb: 256
+  csv_chunk_size: 1000
+  workers: 1
+
+feature_flags:
+  include_masked_samples: true
+  enable_sensitive_detectors: false
+  enable_template_heuristics: true
+  enable_ocr: false
+
+detection:
+  context_window: 60
+  phone_min_digits: 10
+  phone_max_digits: 11
+  max_text_chunks_per_file: 2000
+
+ocr:
+  mode: "off"
+  language: rus+eng
+  max_pages_per_file: 5
+  max_images_per_file: 10
+  min_image_edge_px: 800
+
+reporting:
+  create_csv: true
+  create_json: true
+  create_markdown: true
+  summary_csv_name: summary.csv
+  result_csv_name: result.csv
+  json_report_name: report.json
+  markdown_report_name: report.md
+
+masking:
+  enabled: true
+  secret_env_var: PDN_MASKING_SECRET
+  default_salt: local-dev-salt
+  hash_length: 16
+  preview_prefix: 2
+  preview_suffix: 2
+
+logging:
+  level: INFO
+  rich_tracebacks: true
+  show_path: false
+
+uz_thresholds:
+  ordinary_large_unique: 20
+  ordinary_large_occurrences: 100
+  ordinary_large_rows: 50
+  government_large_unique: 5
+  government_large_occurrences: 20
+  government_large_rows: 10
+  payment_large_unique: 3
+  payment_large_occurrences: 5
+  payment_large_rows: 3
