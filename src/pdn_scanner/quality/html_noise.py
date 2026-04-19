@@ -98,7 +98,11 @@ def should_suppress_html_detection(detection: DetectionResult, chunk: str) -> bo
         return True
 
     if detection.category == "person_name":
-        if any(marker in lowered for marker in WEB_DOC_MARKERS) and "фио" not in lowered and "employee" not in lowered:
+        has_person_label = any(
+            marker in lowered
+            for marker in ("фио", "employee", "full name", "first name", "last name", "requester", "applicant", "recipient")
+        )
+        if any(marker in lowered for marker in WEB_DOC_MARKERS) and not has_person_label:
             return True
         if "живого журнала" in lowered:
             return True

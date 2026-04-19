@@ -37,6 +37,10 @@ class OCRConfig(BaseModel):
     max_pages_per_file: int = 5
     max_images_per_file: int = 10
     min_image_edge_px: int = 800
+    auto_pdf_page_limit: int = 0
+    shortlist_manifest_path: str | None = None
+    shortlist_path_contains: list[str] = Field(default_factory=list)
+    skip_path_contains: list[str] = Field(default_factory=list)
 
 
 class ReportingConfig(BaseModel):

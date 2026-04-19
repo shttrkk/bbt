@@ -41,6 +41,10 @@ ocr:
   max_pages_per_file: 5
   max_images_per_file: 10
   min_image_edge_px: 800
+  auto_pdf_page_limit: 0
+  shortlist_manifest_path:
+  shortlist_path_contains: []
+  skip_path_contains: []
 
 reporting:
   create_csv: true

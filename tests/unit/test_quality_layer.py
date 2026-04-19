@@ -227,6 +227,23 @@ def test_form_like_html_with_person_bundle_survives_selection() -> None:
     assert "HTML_STRONG_BUNDLE" in reasons
 
 
+def test_english_split_name_html_form_survives_selection() -> None:
+    _, quality, assigned_uz, reasons = _pipeline(
+        rel_path="profiles/pass_form.html",
+        file_format=FileFormat.HTML,
+        extractor="html",
+        chunks=[
+            "Employee profile First Name: John Last Name: Carter Date of Birth: 14.03.1988 "
+            "Phone Number: +1 202 555 0147 Residence Address: 1200 Elm Street, Suite 400, Springfield, IL 62704"
+        ],
+    )
+
+    categories = {item.category for item in quality.detections}
+    assert {"person_name", "birth_date", "phone", "address"}.issubset(categories)
+    assert assigned_uz == UZLevel.UZ4
+    assert "HTML_STRONG_BUNDLE" in reasons
+
+
 def test_declaration_like_xls_with_name_only_is_suppressed() -> None:
     _, quality, assigned_uz, reasons = _pipeline(
         rel_path="Прочее/Декларация 2016г Новошахтинск.xls",
@@ -323,3 +340,220 @@ def test_docx_org_contract_requisites_without_person_bundle_is_suppressed() -> N
     assert categories == set()
     assert assigned_uz == UZLevel.NO_PDN
     assert "DOCX_WEAK_SIGNALS_ONLY" in reasons
+
+
+def test_docx_inn_individual_with_phone_survives_as_personal_anchor_bundle() -> None:
+    _, quality, assigned_uz, reasons = _pipeline(
+        rel_path="Прочее/Анкета кандидата.docx",
+        file_format=FileFormat.DOCX,
+        extractor="docx",
+        chunks=[
+            "ИНН: 500100732259",
+            "Телефон: +7 910 245-63-18",
+        ],
+    )
+
+    categories = {item.category for item in quality.detections}
+    assert {"inn_individual", "phone"}.issubset(categories)
+    assert assigned_uz == UZLevel.UZ3
+    assert "DOCX_STRONG_BUNDLE" in reasons
+
+
+def test_docx_inn_legal_entity_with_phone_stays_negative() -> None:
+    _, quality, assigned_uz, reasons = _pipeline(
+        rel_path="Прочее/Договор.docx",
+        file_format=FileFormat.DOCX,
+        extractor="docx",
+        chunks=[
+            "ИНН организации: 7707083893",
+            "Телефон: +7 495 111-22-33",
+        ],
+    )
+
+    assert quality.detections == []
+    assert assigned_uz == UZLevel.NO_PDN
+    assert "DOCX_WEAK_SIGNALS_ONLY" in reasons
+
+
+def test_xls_inn_individual_with_email_survives_as_personal_anchor_bundle() -> None:
+    _, quality, assigned_uz, reasons = _pipeline(
+        rel_path="profiles/clients.xls",
+        file_format=FileFormat.XLS,
+        extractor="xls",
+        chunks=[
+            "sheet: Лист1 | ИНН: 500100732259 | email: ivanov@example.com"
+        ],
+    )
+
+    categories = {item.category for item in quality.detections}
+    assert {"inn_individual", "email"}.issubset(categories)
+    assert assigned_uz == UZLevel.UZ3
+    assert "XLS_STRONG_BUNDLE" in reasons
+
+
+def test_pdf_public_policy_with_email_only_is_suppressed() -> None:
+    _, quality, assigned_uz, reasons = _pipeline(
+        rel_path="Выгрузки/Сайты/Доки/privacy_policy.pdf",
+        file_format=FileFormat.PDF,
+        extractor="pdf",
+        chunks=[
+            "Privacy policy Contact email: privacy@example.com Телефон: +7 495 111-22-33"
+        ],
+    )
+
+    assert quality.detections == []
+    assert assigned_uz == UZLevel.NO_PDN
+    assert "PDF_PUBLIC_SOURCE" in reasons or "PDF_PUBLIC_LEGAL_OR_REPORT" in reasons
+
+
+def test_pdf_inn_individual_with_phone_survives_as_strong_bundle() -> None:
+    _, quality, assigned_uz, reasons = _pipeline(
+        rel_path="Прочее/anketa_candidate.pdf",
+        file_format=FileFormat.PDF,
+        extractor="pdf",
+        chunks=[
+            "ИНН: 500100732259",
+            "Телефон: +7 910 245-63-18",
+        ],
+    )
+
+    categories = {item.category for item in quality.detections}
+    assert {"inn_individual", "phone"}.issubset(categories)
+    assert assigned_uz == UZLevel.UZ3
+    assert "PDF_STRONG_BUNDLE" in reasons
+
+
+def test_pdf_org_requisites_only_do_not_raise_positive() -> None:
+    _, quality, assigned_uz, reasons = _pipeline(
+        rel_path="Прочее/contract.pdf",
+        file_format=FileFormat.PDF,
+        extractor="pdf",
+        chunks=[
+            "ИНН организации: 7707083893 БИК: 044525225 расчетный счет: 40702810900000000001 sales@example.com"
+        ],
+    )
+
+    assert quality.detections == []
+    assert assigned_uz == UZLevel.NO_PDN
+    assert "PDF_ORG_CONTACT_ONLY" in reasons or "PDF_WEAK_SIGNALS_ONLY" in reasons or "PDF_NO_STRONG_BUNDLE" in reasons
+
+
+def test_pdf_public_rules_with_org_contacts_and_inn_are_suppressed_even_if_driver_like_number_exists() -> None:
+    _, quality, assigned_uz, reasons = _pipeline(
+        rel_path="Документы партнеров/rules.pdf",
+        file_format=FileFormat.PDF,
+        extractor="pdf",
+        chunks=[
+            "ПРАВИЛА проведения акции. ФГБОУ ВО Университет. ИНН: 7707083893 "
+            "email: info@example.com телефон: +7 495 111-22-33 адрес: г. Москва, ул. Лесная, д. 1 "
+            "на сайте опубликованы правила и соглашение."
+        ],
+    )
+
+    assert quality.detections == []
+    assert assigned_uz == UZLevel.NO_PDN
+    assert "PDF_PUBLIC_SOURCE" in reasons or "PDF_PUBLIC_LEGAL_OR_REPORT" in reasons
+
+
+def test_pdf_protocol_with_snils_list_is_suppressed_as_public_registry() -> None:
+    _, quality, assigned_uz, reasons = _pipeline(
+        rel_path="Прочее/Prot3_11.03.2025.pdf",
+        file_format=FileFormat.PDF,
+        extractor="pdf",
+        chunks=[
+            "ПРОТОКОЛ заседания комиссии университета. 170-633-174 48, 157-674-009 93, 158-065-567 88."
+        ],
+    )
+
+    categories = {item.category for item in quality.detections}
+    assert categories == set()
+    assert assigned_uz == UZLevel.NO_PDN
+    assert "PDF_PUBLIC_REGISTRY_OR_PROTOCOL" in reasons or "PDF_PUBLIC_LEGAL_OR_REPORT" in reasons
+
+
+def test_pdf_privacy_notice_with_generic_biometric_word_and_email_is_suppressed() -> None:
+    _, quality, assigned_uz, reasons = _pipeline(
+        rel_path="Прочее/aydinlatma_metni.pdf",
+        file_format=FileFormat.PDF,
+        extractor="pdf",
+        chunks=[
+            "Aydinlatma Metni KVKK kisisel veri information university email: bilgi@example.com iris scanner data."
+        ],
+    )
+
+    assert quality.detections == []
+    assert assigned_uz == UZLevel.NO_PDN
+    assert "PDF_PUBLIC_LEGAL_OR_REPORT" in reasons or "PDF_NO_STRONG_BUNDLE" in reasons
+
+
+def test_pdf_public_salary_report_is_suppressed_even_with_names_and_contacts() -> None:
+    _, quality, assigned_uz, reasons = _pipeline(
+        rel_path="Прочее/doc05362520220404131040 (2).pdf",
+        file_format=FileFormat.PDF,
+        extractor="pdf",
+        chunks=[
+            "Информация о среднемесячной заработной плате руководителей федерального университета. "
+            "Кулешова Ксения Геннадьевна 8 (863) 218-40-59 lepetuha@sfedu.ru ИНН: 6163027810"
+        ],
+    )
+
+    assert quality.detections == []
+    assert assigned_uz == UZLevel.NO_PDN
+    assert "PDF_PUBLIC_LEGAL_OR_REPORT" in reasons
+
+
+def test_image_with_inn_legal_entity_only_is_suppressed() -> None:
+    _, quality, assigned_uz, reasons = _pipeline(
+        rel_path="Архив сканы/a/scan.tif",
+        file_format=FileFormat.IMAGE,
+        extractor="image",
+        chunks=["ИНН организации: 7707083893"],
+    )
+
+    assert quality.detections == []
+    assert assigned_uz == UZLevel.NO_PDN
+    assert "IMAGE_WEAK_SIGNALS_ONLY" in reasons or "IMAGE_NO_STRONG_BUNDLE" in reasons
+
+
+def test_image_with_email_only_cv_is_suppressed() -> None:
+    _, quality, assigned_uz, reasons = _pipeline(
+        rel_path="Архив сканы/y/cv.tif",
+        file_format=FileFormat.IMAGE,
+        extractor="image",
+        chunks=["Curriculum Vitae University of Chicago email: rmecarro@midway.uchicago.edu"],
+    )
+
+    assert quality.detections == []
+    assert assigned_uz == UZLevel.NO_PDN
+    assert "IMAGE_PUBLIC_DOC_NO_STRONG_BUNDLE" in reasons or "IMAGE_WEAK_SIGNALS_ONLY" in reasons
+
+
+def test_image_with_person_name_and_phone_survives() -> None:
+    _, quality, assigned_uz, reasons = _pipeline(
+        rel_path="Архив сканы/z/application.tif",
+        file_format=FileFormat.IMAGE,
+        extractor="image",
+        chunks=["ФИО: Иванов Иван Иванович Телефон: +7 999 123-45-67"],
+    )
+
+    categories = {item.category for item in quality.detections}
+    assert {"person_name", "phone"}.issubset(categories)
+    assert assigned_uz == UZLevel.UZ4
+    assert "IMAGE_STRONG_BUNDLE" in reasons
+
+
+def test_rtf_consent_with_org_requisites_is_suppressed() -> None:
+    _, quality, assigned_uz, reasons = _pipeline(
+        rel_path="Прочее/Согласие_ПДн_(map.ncpti.ru).rtf",
+        file_format=FileFormat.RTF,
+        extractor="rtf",
+        chunks=[
+            "Согласие на обработку персональных данных. "
+            "Оператор: Научно-исследовательский институт. ИНН 6164205270. "
+            "Адрес: 344003, Ростовская область, г Ростов-на-Дону, ул Города Волос, д. 6."
+        ],
+    )
+
+    assert quality.detections == []
+    assert assigned_uz == UZLevel.NO_PDN
+    assert "OFFICE_WEAK_SIGNALS_ONLY" in reasons

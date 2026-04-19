@@ -7,7 +7,7 @@ from pdn_scanner.models import DetectionResult
 
 PLACEHOLDER_PATTERNS = (
     re.compile(
-        r"\b(?:фио|адрес|подпись|дата рождения|паспорт|серия|номер|заявитель|телефон|email|e-mail)\b"
+        r"\b(?:фио|full name|first name|last name|address|адрес|подпись|дата рождения|date of birth|паспорт|passport|series|номер|number|заявитель|телефон|phone|email|e-mail)\b"
         r"[^.\n:]{0,24}(?:[:\-]\s*)?(?:_{3,}|\.{3,}|[- ]{6,})",
         flags=re.IGNORECASE,
     ),
@@ -19,9 +19,15 @@ FORM_MARKERS = (
     "подпись",
     "расшифровка",
     "паспорт",
+    "passport",
     "дата рождения",
+    "date of birth",
     "фио",
+    "full name",
+    "first name",
+    "last name",
     "адрес",
+    "address",
 )
 
 

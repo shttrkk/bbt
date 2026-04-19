@@ -58,3 +58,32 @@ def test_html_error_page_xls_is_skipped(tmp_path: Path) -> None:
 
     assert extraction.status == ContentStatus.EMPTY
     assert extraction.text_chunks == []
+
+
+def test_xlsx_extractor_preserves_split_english_name_headers(tmp_path: Path) -> None:
+    path = tmp_path / "profiles.xlsx"
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.title = "Profiles"
+    worksheet.append(["First Name", "Last Name", "Date of Birth", "Phone Number"])
+    worksheet.append(["John", "Carter", "14.03.1988", "+1 202 555 0147"])
+    workbook.save(path)
+    workbook.close()
+
+    extractor = XLSExtractor()
+    config = load_config("configs/default.yaml")
+    descriptor = FileDescriptor(
+        path=str(path),
+        rel_path=path.name,
+        size_bytes=path.stat().st_size,
+        extension="xlsx",
+    )
+
+    extraction = extractor.extract(descriptor, config)
+
+    assert extraction.status == ContentStatus.OK
+    assert extraction.text_chunks
+    assert "first name: John" in extraction.text_chunks[0]
+    assert "last name: Carter" in extraction.text_chunks[0]
+    assert "дата рождения: 14.03.1988" in extraction.text_chunks[0]
+    assert "телефон: +1 202 555 0147" in extraction.text_chunks[0]
