@@ -3,7 +3,7 @@ from __future__ import annotations
 from pdn_scanner.classify import UZClassifier
 from pdn_scanner.config import load_config
 from pdn_scanner.detectors.engine import DetectionEngine
-from pdn_scanner.enums import ConfidenceLevel, ContentStatus, FileFormat, UZLevel
+from pdn_scanner.enums import ConfidenceLevel, ContentStatus, FileFormat, StorageClass, UZLevel
 from pdn_scanner.models import ExtractedContent, FileDescriptor
 from pdn_scanner.quality import QualityLayer
 
@@ -39,6 +39,11 @@ def _pipeline(
     quality = quality_layer.assess(descriptor, extraction, detections)
     assigned_uz, reasons, _ = classifier.classify(
         quality.detections,
+        storage_class=quality.storage_class,
+        primary_genre=quality.primary_genre,
+        risk_score=quality.risk_score,
+        justification_score=quality.justification_score,
+        noise_score=quality.noise_score,
         is_template=quality.is_template,
         is_public_doc=quality.is_public_doc,
         is_reference_data=quality.is_reference_data,
@@ -56,9 +61,10 @@ def test_template_document_is_suppressed_and_not_promoted() -> None:
     )
 
     assert quality.is_template is True
+    assert quality.storage_class == StorageClass.NON_TARGET
     assert quality.detections == []
     assert assigned_uz == UZLevel.NO_PDN
-    assert "TEMPLATE_SUPPRESSED" in reasons
+    assert "NON_LEAK_CONTEXT_SUPPRESSED" in reasons
 
 
 def test_public_policy_weak_signals_do_not_raise_risk() -> None:
@@ -73,9 +79,10 @@ def test_public_policy_weak_signals_do_not_raise_risk() -> None:
     )
 
     assert quality.is_public_doc is True
+    assert quality.storage_class == StorageClass.PD_BUT_JUSTIFIED_STORAGE
     assert quality.detections == []
     assert assigned_uz == UZLevel.NO_PDN
-    assert "PUBLIC_DOC_WEAK_SIGNALS_ONLY" in reasons
+    assert "JUSTIFIED_STORAGE_SUPPRESSED" in reasons
 
 
 def test_reference_plan_json_stays_negative_even_with_id_like_valid_inn() -> None:
@@ -89,7 +96,7 @@ def test_reference_plan_json_stays_negative_even_with_id_like_valid_inn() -> Non
     assert quality.is_reference_data is True
     assert [item for item in quality.detections if item.category in {"inn_individual", "inn_legal_entity"}] == []
     assert assigned_uz == UZLevel.NO_PDN
-    assert "REFERENCE_DATA_WEAK_SIGNALS_ONLY" in reasons
+    assert "NON_LEAK_CONTEXT_SUPPRESSED" in reasons
 
 
 def test_incidents_json_noise_does_not_become_positive() -> None:
@@ -106,6 +113,27 @@ def test_incidents_json_noise_does_not_become_positive() -> None:
     assert quality.is_reference_data is True
     assert quality.detections == []
     assert assigned_uz == UZLevel.NO_PDN
+
+
+def test_parquet_subject_records_do_not_fall_back_to_reference_data() -> None:
+    _, quality, assigned_uz, reasons = _pipeline(
+        rel_path="Billing/physical.parquet",
+        file_format=FileFormat.PARQUET,
+        extractor="parquet",
+        chunks=[
+            "Contract: GB84ZKTO10 | Name: Ivanov Ivan Ivanovich | Passport No: 4510 123456 | "
+            "Address: 14 Green Street, Boston | Email: ivanov@example.com | Phone: +1 202 555 0147"
+        ],
+        metadata={"header": ["Contract", "Name", "Passport", "Address", "Email", "Phone"]},
+    )
+
+    categories = {item.category for item in quality.detections}
+    assert quality.is_reference_data is False
+    assert quality.storage_class == StorageClass.TARGET_LEAK
+    assert quality.primary_genre == "personal_export"
+    assert {"address", "email", "phone"}.issubset(categories)
+    assert assigned_uz != UZLevel.NO_PDN
+    assert "REFERENCE_DATA_WEAK_SIGNALS_ONLY" not in reasons
 
 
 def test_html_noise_suppresses_token_like_phone_and_inn_hits() -> None:
@@ -500,6 +528,64 @@ def test_pdf_public_salary_report_is_suppressed_even_with_names_and_contacts() -
     assert quality.detections == []
     assert assigned_uz == UZLevel.NO_PDN
     assert "PDF_PUBLIC_LEGAL_OR_REPORT" in reasons
+
+
+def test_pdf_public_contact_directory_remains_justified_storage() -> None:
+    _, quality, assigned_uz, reasons = _pipeline(
+        rel_path="Прочее/Координаты для связи с профильными структурными подразделениями_3.pdf",
+        file_format=FileFormat.PDF,
+        extractor="pdf",
+        chunks=[
+            "ПЕРЕЧЕНЬ СТРУКТУРНЫХ ПОДРАЗДЕЛЕНИЙ ЮФУ С КОНТАКТНЫМИ ДАННЫМИ ОТВЕТСТВЕННЫХ "
+            "ПО РАБОТЕ С АСПИРАНТАМИ. Академия архитектуры и искусств, г. Ростов-на-Дону, "
+            "пр. Буденновский, 39. Иванова Ирина Петровна, ответственный за подготовку в аспирантуре. "
+            "Телефон: +7 (863) 218-40-00, +7 (928) 131-72-47. Email: ivanova@sfedu.ru"
+        ],
+    )
+
+    assert quality.storage_class == StorageClass.PD_BUT_JUSTIFIED_STORAGE
+    assert quality.primary_genre == "public_contact_doc"
+    assert quality.detections == []
+    assert assigned_uz == UZLevel.NO_PDN
+    assert "PDF_PUBLIC_LEGAL_OR_REPORT" in reasons
+
+
+def test_consent_form_with_hard_anchors_is_not_downgraded_to_justified_storage() -> None:
+    _, quality, assigned_uz, reasons = _pipeline(
+        rel_path="Прочее/soglasie-form.pdf",
+        file_format=FileFormat.PDF,
+        extractor="pdf",
+        chunks=[
+            "Согласие на обработку персональных данных. ФИО: Иванов Иван Иванович. "
+            "СНИЛС: 112-233-445 95. Паспорт: 4510 123456. Телефон: +7 999 123-45-67."
+        ],
+    )
+
+    categories = {item.category for item in quality.detections}
+    assert {"snils", "passport_series_number", "phone"}.issubset(categories)
+    assert quality.storage_class == StorageClass.TARGET_LEAK
+    assert quality.primary_genre in {"personal_form", "image_of_personal_doc"}
+    assert assigned_uz in {UZLevel.UZ2, UZLevel.UZ3}
+    assert "JUSTIFIED_STORAGE_SUPPRESSED" not in reasons
+
+
+def test_structured_company_export_is_not_treated_as_target_leak() -> None:
+    _, quality, assigned_uz, reasons = _pipeline(
+        rel_path="Billing/company.parquet",
+        file_format=FileFormat.PARQUET,
+        extractor="parquet",
+        chunks=[
+            "Contract: GB09LOGH81 | Name: Mills, Tanner and Valdez Inc | "
+            "Address: 87968 Jeffrey Curve | Contact: [\"Katie Baker\"] | "
+            "Email: sales@example.com | Phone: +1 502-790-4334"
+        ],
+        metadata={"header": ["Contract", "Name", "Address", "Contact", "Email", "Phone"]},
+    )
+
+    assert quality.storage_class == StorageClass.NON_TARGET
+    assert quality.primary_genre == "company_export"
+    assert assigned_uz == UZLevel.NO_PDN
+    assert "NON_LEAK_CONTEXT_SUPPRESSED" in reasons
 
 
 def test_image_with_inn_legal_entity_only_is_suppressed() -> None:

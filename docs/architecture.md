@@ -1,75 +1,188 @@
 # Architecture
 
-## Source Of Truth
+## Цель архитектуры
 
-Финальная поставка описана в [SUBMISSION.md](/Users/shttrkk/Downloads/ПДнDataset/SUBMISSION.md).
+Архитектура проекта заточена под explainable анализ файлового хранилища с leak-aware интерпретацией.
 
-Актуальный submission-baseline:
+Главный вопрос системы:
 
-`scan -> detect format -> dispatch extractor -> normalize -> detect -> quality-layer -> classify -> report`
+`является ли файл подозрительным примером хранения персональных данных`
 
-## Pipeline
+а не:
 
-1. `scanner.walker`
-   Рекурсивный обход каталога и сбор `FileDescriptor`.
-2. `scanner.format_detector`
-   Определение формата по extension и опционально по MIME.
-3. `scanner.dispatcher`
-   Routing `format -> extractor`.
-4. `extractors.*`
-   В submission реально используются `txt`, `csv`, `json`, `html`.
-5. `normalize.*`
-   Нормализация текста, whitespace и значений.
-6. `detectors.*`
-   Поиск baseline-кандидатов ПДн.
-7. `quality.*`
-   Снижение false positives через template/public-doc/reference-data/noise suppression.
-8. `classify.uz_engine`
-   Explainable rules engine для `УЗ-1..УЗ-4` и `NO_PDN`.
-9. `reporting.*`
-   Privacy-safe output и сборка submission-артефакта.
+`встречаются ли в файле какие-либо персональные поля`
 
-## Submission-Relevant Components
+## Top-Level Pipeline
 
-- Extractors: `txt`, `csv`, `json`, `html`
-- Detectors: `email`, `phone`, `person_name`, `address`, `SNILS`, `INN`, `bank_card`, `birth_date_candidate`
-- Quality flags:
-  - `is_template`
-  - `is_public_doc`
-  - `is_reference_data`
-- Export rule:
-  - в `result.csv` попадают только файлы с `assigned_uz != NO_PDN`
+`scan -> detect format -> dispatch extractor -> detect -> quality-layer -> leak-context -> classify -> report`
 
-## Planned But Not Submission-Critical
+## Основные слои
 
-В кодовой базе есть hooks или заглушки для:
+### 1. Scanner
 
+- `scanner.walker`
+  рекурсивно обходит каталог и строит `FileDescriptor`
+- `scanner.format_detector`
+  определяет формат по extension и MIME
+- `scanner.dispatcher`
+  выбирает extractor по `FileFormat`
+
+### 2. Extractors
+
+Модуль: `src/pdn_scanner/extractors/`
+
+Реализованные extractor-ветки:
+- `txt`
+- `csv`
+- `json`
+- `parquet`
 - `pdf`
 - `docx`
 - `rtf`
 - `xls/xlsx`
-- `parquet`
-- `image` / OCR
+- `html`
+- `image`
 - `doc`
-- `mp4`
 
-Эти направления не были полноценными источниками финального submission-результата текущей версии.
+Подход:
+- structured extractors сохраняют row/header context
+- document extractors извлекают page/chunk text
+- `pdf` использует `pypdf` + `pdfplumber` fallback и selective OCR
+- `image` использует OCR при включённом конфиге
+- legacy `doc` проходит через отдельный extractor
 
-## Privacy-Safe Reporting
+### 3. Detection Layer
 
-- raw PII не сохраняется в `CSV/JSON/Markdown`
-- итоговый submission использует только positive-only export
-- отчеты сохраняют counts, categories, hashes, reason codes и quality-flags без полного раскрытия значений
+Модуль: `src/pdn_scanner/detectors/`
 
-## UZ Classification
+Группы сигналов:
+- ordinary
+  `person_name`, `address`, `phone`, `email`, `birth_date`, `birth_place`
+- government
+  `snils`, `passport_*`, `inn_individual`, `inn_legal_entity`, `driver_license`, `mrz`
+- payment
+  `bank_card`, `bank_account`, `bik`
+- special
+  health / beliefs / other special categories
+- biometric
+  biometric-like markers
 
-- `NO_PDN`
-  файл не набрал устойчивых PD signals после quality-layer
-- `УЗ-4`
-  ordinary PII малого объема
-- `УЗ-3`
-  government IDs или ordinary PII большего объема
-- `УЗ-2`
-  validated payment data или более рискованные government signals
-- `УЗ-1`
-  sensitive / biometric-like сигналы, если включены соответствующие detectors
+Каждая находка содержит:
+- category
+- family
+- confidence
+- validation status
+- masked preview / hash
+- occurrences
+- location hints
+- context keywords
+
+### 4. Validators
+
+Модуль: `src/pdn_scanner/validators/`
+
+Используются для снижения FP:
+- `snils`
+- `inn`
+- `luhn`
+- `bank`
+- `dates`
+- `mrz`
+
+### 5. Quality Layer
+
+Модуль: `src/pdn_scanner/quality/anti_fp.py`
+
+Задача quality-layer:
+- убрать шум
+- подавить public/template/reference cases
+- сохранить только meaningful subject-linked signals
+
+Основные механизмы:
+- template detection
+- public document detection
+- reference data detection
+- HTML noise suppression
+- structured `id/token` suppression
+- schema-based confidence boost
+- format-specific gates:
+  `html`, `xls`, `docx`, `office`, `pdf`, `image`
+
+### 6. Leak Context Layer
+
+Модуль: `src/pdn_scanner/quality/leak_context.py`
+
+Здесь система переходит от `PD presence` к `storage risk`.
+
+Сначала определяется жанр документа:
+- `personal_form`
+- `internal_employee_doc`
+- `personal_export`
+- `public_contact_doc`
+- `public_report`
+- `blank_template`
+- `org_requisites_doc`
+- `image_of_personal_doc`
+- `correspondence`
+- `company_export`
+
+Потом считаются:
+- `risk_score`
+- `justification_score`
+- `noise_score`
+
+На выходе файл получает один из storage classes:
+- `TARGET_LEAK`
+- `PD_BUT_JUSTIFIED_STORAGE`
+- `NON_TARGET`
+
+### 7. Classifier / UZ Logic
+
+Модуль: `src/pdn_scanner/classify/uz_engine.py`
+
+UZ-классификатор работает только поверх quality/leak-context решения.
+
+Правила:
+- justified/non-target storage уходит в `NO_PDN`
+- target leak получает `UZ-1..UZ-4` в зависимости от family и объёма
+- sensitive/biometric -> `UZ-1`
+- validated payment -> `UZ-2`
+- government-heavy -> `UZ-2/UZ-3`
+- ordinary subject-linked bundles -> `UZ-4`
+
+### 8. Cross-File Logic
+
+Модуль: `src/pdn_scanner/submission/cross_file.py`
+
+Нужен для случаев, когда единичный файл слабый, а директория в целом образует leak-bundle.
+
+Механики:
+- demotion weak singletons
+- promotion structured pair bundles
+- promotion by shared linkage hashes
+- small-directory bundle promotion
+
+### 9. Reporting
+
+Модуль: `src/pdn_scanner/reporting/`
+
+Типы отчётов:
+- `summary.csv`
+- `result.csv` runtime artifact
+- `report.json`
+- `report.md`
+
+Свойства:
+- privacy-safe serialization
+- без raw PII
+- explainable reasons и counters
+
+## Финальный release state
+
+Несмотря на широкий кодовый coverage, финальный конкурсный [result.csv](/Users/shttrkk/Downloads/ПДнDataset/result.csv) закреплён вручную как release artifact.
+
+Это разделяет:
+- runnable scanner
+- финальное конкурсное решение
+
+Именно это состояние и должно использоваться на защите.

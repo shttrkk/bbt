@@ -43,3 +43,9 @@ class UZLevel(StrEnum):
     UZ3 = "UZ-3"
     UZ4 = "UZ-4"
     NO_PDN = "NO_PDN"
+
+
+class StorageClass(StrEnum):
+    TARGET_LEAK = "TARGET_LEAK"
+    PD_BUT_JUSTIFIED_STORAGE = "PD_BUT_JUSTIFIED_STORAGE"
+    NON_TARGET = "NON_TARGET"

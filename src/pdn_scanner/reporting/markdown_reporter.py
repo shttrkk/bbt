@@ -41,7 +41,8 @@ def write_markdown_report(
             flags = _format_flags(result)
             reasons = ",".join(result.classification_reasons[:3]) if result.classification_reasons else "none"
             lines.append(
-                f"- `{result.file.rel_path}` -> {result.assigned_uz.value}, detections={total}, "
+                f"- `{result.file.rel_path}` -> {result.assigned_uz.value}, storage={result.storage_class.value}, "
+                f"genre={result.primary_genre}, detections={total}, "
                 f"validated={result.validated_entities_count}, suspicious={result.suspicious_entities_count}, "
                 f"flags={flags}, reasons={reasons}, categories={_format_categories(result)}"
             )
@@ -68,4 +69,6 @@ def _format_flags(result: FileScanResult) -> str:
         flags.append("public_doc")
     if result.is_reference_data:
         flags.append("reference_data")
+    if result.storage_class.value != "NON_TARGET":
+        flags.append(result.storage_class.value.lower())
     return ",".join(flags) if flags else "none"

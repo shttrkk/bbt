@@ -9,7 +9,8 @@ from pdn_scanner.extractors.ocr import should_attempt_image_ocr, should_attempt_
 def test_pdf_ocr_shortlist_requires_marker_or_override_in_auto_mode() -> None:
     config = load_config("configs/ocr.yaml")
 
-    assert should_attempt_pdf_ocr("Прочее/random_doc.pdf", config, page_count=1) is False
+    assert should_attempt_pdf_ocr("Прочее/random_doc.pdf", config, page_count=1) is True
+    assert should_attempt_pdf_ocr("Прочее/random_doc.pdf", config, page_count=20) is False
     assert should_attempt_pdf_ocr("Прочее/анкета_сотрудника.pdf", config, page_count=1) is True
 
 
@@ -27,4 +28,5 @@ def test_image_ocr_shortlist_keeps_archive_tiff_and_honors_skip_patterns() -> No
     config = load_config("configs/ocr.yaml")
 
     assert should_attempt_image_ocr("Архив сканы/a/zza94a00/2063196920.tif", config) is True
+    assert should_attempt_image_ocr("Прочее/scanned_form.tif", config) is True
     assert should_attempt_image_ocr("Выгрузки/Сайты/public_cv.png", config) is False

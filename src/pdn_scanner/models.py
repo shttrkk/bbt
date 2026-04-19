@@ -5,7 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from .enums import ConfidenceLevel, ContentStatus, FileFormat, UZLevel, ValidationStatus
+from .enums import ConfidenceLevel, ContentStatus, FileFormat, StorageClass, UZLevel, ValidationStatus
 
 
 class FileDescriptor(BaseModel):
@@ -74,6 +74,12 @@ class FileScanResult(BaseModel):
     scan_status: str = "ok"
     assigned_uz: UZLevel = UZLevel.NO_PDN
     classification_reasons: list[str] = Field(default_factory=list)
+    storage_class: StorageClass = StorageClass.NON_TARGET
+    primary_genre: str = "unknown"
+    genre_tags: list[str] = Field(default_factory=list)
+    risk_score: int = 0
+    justification_score: int = 0
+    noise_score: int = 0
     counts_by_category: dict[str, int] = Field(default_factory=dict)
     counts_by_family: dict[str, int] = Field(default_factory=dict)
     validated_counts_by_category: dict[str, int] = Field(default_factory=dict)

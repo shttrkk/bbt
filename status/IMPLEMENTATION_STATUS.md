@@ -1,50 +1,41 @@
 # Implementation Status
 
-Статус ниже синхронизирован с актуальным `SUBMISSION.md` и текущим кодом.
+## Release State
 
-## Реально используется в submission
+Текущий репозиторий приведён к clean release состоянию перед защитой и публикацией.
 
-| Область | Статус | Комментарий |
-|---|---|---|
-| CLI | done | локальный `scan`-проход для подготовки privacy-safe артефактов |
-| Walker | done | recursive traversal с recoverable errors |
-| Format detection | done | extension + optional MIME fallback |
-| Dispatcher | done | format routing и unsupported fallback |
-| TXT extractor | done | используется в submission |
-| CSV extractor | done | используется в submission |
-| JSON extractor | done | используется в submission |
-| HTML extractor | done | используется в submission |
-| Ordinary detectors | done | `email`, `phone`, `person_name`, `address`, `birth_date_candidate` |
-| Government detectors | done | `SNILS`, `INN` |
-| Payment detectors | done | `bank_card` |
-| Quality layer | done | `is_template`, `is_public_doc`, `is_reference_data`, noise suppression |
-| UZ classification | done | config-driven, explainable, с `NO_PDN` |
-| Privacy-safe reporting | done | `summary.csv`, `report.json`, `report.md`, positive-only export для submission |
+- version: `0.1.1`
+- final branch target: `main`
+- final submission artifact: [result.csv](/Users/shttrkk/Downloads/ПДнDataset/result.csv)
 
-## Есть в коде, но не является полноценной частью текущего submission
+## Кодовая готовность
 
 | Область | Статус | Комментарий |
 |---|---|---|
-| PDF extractor | stub | есть только unsupported fallback с warning |
-| DOCX extractor | stub | есть только unsupported fallback с warning |
-| RTF extractor | stub | hook присутствует, extraction не реализован |
-| XLS/XLSX extractor | stub | hook присутствует, extraction не реализован |
-| Parquet extractor | stub | hook присутствует, extraction не реализован |
-| Image extractor / OCR | stub | OCR configurable, но не часть current submission flow |
-| Legacy DOC extractor | stub | planned fallback chain |
-| Video extractor | stub | best-effort planned |
+| CLI | done | `scan`, `validate-config`, `version` |
+| Walker / format detection / dispatcher | done | production-ready для локального запуска |
+| TXT / CSV / JSON / HTML | done | базовые устойчивые extractors |
+| PDF / DOCX / RTF / XLS / Parquet | done | extractor branches реализованы |
+| Image / OCR | done | включаются через OCR/hybrid configs |
+| Legacy DOC | done | отдельная extraction ветка |
+| Video | limited | best-effort unsupported fallback |
+| Detectors | done | ordinary, government, payment, special, biometric |
+| Validators | done | SNILS, INN, Luhn, bank, dates, MRZ hooks |
+| Quality layer | done | anti-false-positive core layer |
+| Leak context | done | genre-aware / storage-aware logic |
+| UZ classifier | done | explainable final classifier |
+| Cross-file logic | done | promotion/demotion across directory context |
+| Privacy-safe reporting | done | CSV/JSON/Markdown without raw PII |
 
-## Частично реализовано
+## Release decisions
 
-| Область | Статус | Комментарий |
-|---|---|---|
-| Sensitive detectors | partial | conservative hooks, по умолчанию не core-path |
-| Bank validators | partial | базовые helpers без полного production-grade checksum coverage |
-| Date validators | partial | `birth_date` helper присутствует, не основной submission signal |
-| MRZ validator | partial | интерфейс есть, фактически planned hook |
+- audit/probe/review artifacts удалены из tracked tree
+- внутренние Codex handoff docs удалены
+- конкурсный `result.csv` закреплён вручную
+- документация переписана под leak-aware постановку
 
-## Следующий практический шаг
+## Ограничения, которые честно стоит проговаривать
 
-- довести `pdf/docx/xls/parquet` до реального extraction layer
-- расширять coverage только без потери текущего precision-first quality-layer
-- включать OCR отдельно от базового submission-контура
+- OCR-heavy exploratory runs дороги по времени
+- PDF/image ветка на этом корпусе не дала надёжного нового positive tail для финального submission
+- финальный `result.csv` является release choice, а не автоматическим экспортом любого последнего exploratory rerun

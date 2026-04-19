@@ -6,10 +6,11 @@ from dataclasses import dataclass, field
 from urllib.parse import unquote
 
 from pdn_scanner.config import AppConfig
-from pdn_scanner.enums import ConfidenceLevel, FileFormat, ValidationStatus
+from pdn_scanner.enums import ConfidenceLevel, FileFormat, StorageClass, ValidationStatus
 from pdn_scanner.models import DetectionResult, ExtractedContent, FileDescriptor
 
 from .html_noise import is_public_web_page, should_suppress_html_detection
+from .leak_context import assess_leak_context
 from .public_docs import detect_public_doc
 from .reference_data import detect_reference_data
 from .templates import detect_template_like
@@ -332,6 +333,12 @@ class QualityAssessment:
     is_template: bool = False
     is_public_doc: bool = False
     is_reference_data: bool = False
+    storage_class: StorageClass = StorageClass.NON_TARGET
+    primary_genre: str = "unknown"
+    genre_tags: list[str] = field(default_factory=list)
+    risk_score: int = 0
+    justification_score: int = 0
+    noise_score: int = 0
     validated_entities_count: int = 0
     suspicious_entities_count: int = 0
     confidence_summary: dict[str, int] = field(default_factory=dict)
@@ -368,6 +375,8 @@ class QualityLayer:
         reasons.extend(public_reasons)
         reasons.extend(reference_reasons)
 
+        candidate_detections = list(adjusted)
+
         adjusted, html_reasons = self._apply_html_selection(descriptor, sample_text, adjusted)
         reasons.extend(html_reasons)
         adjusted, xls_reasons = self._apply_xls_selection(descriptor, sample_text, adjusted)
@@ -388,12 +397,29 @@ class QualityLayer:
             is_reference_data=is_reference_data,
         )
 
+        leak_context = assess_leak_context(
+            descriptor,
+            extraction,
+            candidate_detections,
+            adjusted,
+            is_template=is_template,
+            is_public_doc=is_public_doc,
+            is_reference_data=is_reference_data,
+        )
+        reasons.extend(leak_context.reasons)
+
         return QualityAssessment(
             detections=adjusted,
             reasons=sorted(set(reasons)),
             is_template=is_template,
             is_public_doc=is_public_doc,
             is_reference_data=is_reference_data,
+            storage_class=leak_context.storage_class,
+            primary_genre=leak_context.primary_genre,
+            genre_tags=leak_context.genre_tags,
+            risk_score=leak_context.risk_score,
+            justification_score=leak_context.justification_score,
+            noise_score=leak_context.noise_score,
             validated_entities_count=self._validated_entities_count(adjusted),
             suspicious_entities_count=self._suspicious_entities_count(adjusted),
             confidence_summary=self._confidence_summary(adjusted),

@@ -1,39 +1,33 @@
 # Roadmap
 
-## Submission Baseline
+## Текущее состояние
 
-Финальный submission-проход описан в [SUBMISSION.md](/Users/shttrkk/Downloads/ПДнDataset/SUBMISSION.md).
+Версия `0.1.1` считается release-ready для защиты:
+- leak-aware logic внедрена
+- финальный `result.csv` закреплён
+- документация синхронизирована с кодом
+- тесты проходят
 
-Зафиксированное состояние:
+## Что уже закрыто
 
-- реальный submission-контур работает на `txt/csv/json/html`
-- решающие улучшения относительно раннего baseline находятся в quality-layer
-- в submission попадают только файлы с итоговым `assigned_uz != NO_PDN`
+- переход от `PD presence` к `leak-aware` интерпретации
+- genre-aware и storage-aware decision logic
+- `parquet` extraction для subject-level exports
+- `pdf` extraction с fallback и selective OCR hooks
+- `docx`, `rtf`, `xls`, `image`, `doc` extraction branches
+- explainable storage classification и UZ logic
+- cross-file promotion/demotion logic
 
-## v0.1.1 Submission Profile
+## Что считается будущими итерациями, а не частью релизной фиксации
 
-- локальный CLI-проход для подготовки `result.csv`
-- detectors: `email`, `phone`, `person_name`, `address`, `SNILS`, `INN`, `bank_card`, `birth_date_candidate`
-- quality-layer:
-  - template suppression
-  - public-document suppression
-  - reference-data suppression
-  - HTML / JS / token-noise suppression
-  - structured `id/token` noise suppression
-- privacy-safe reporting
-- positive-only export в legacy submission-формат `size,time,name`
+- performance tuning OCR-heavy runs
+- дополнительное сужение public/report false positives
+- более агрессивная office/image recall без потери precision
+- автоматический release builder для фиксированного submission state
 
-## Pending After Submission
+## Принцип дальнейшего развития
 
-- реальные extractors для `pdf`, `docx`, `rtf`, `xls/xlsx`, `parquet`
-- selective OCR для `tif/png/jpg/gif`
-- scanned PDF fallback
-- legacy `DOC` fallback chain
-- best-effort `MP4` processing
-- performance hardening для больших structured и document-heavy каталогов
-
-## Practical Priority
-
-1. Поддержать document/structured форматы, которые уже перечислены в конфиге, но пока остаются заглушками.
-2. Сохранить текущий precision-first quality-layer при расширении coverage.
-3. Не включать OCR и тяжелые extractors в core path без отдельной проверки влияния на false positives и throughput.
+Любое расширение coverage должно подтверждать не “нашли больше полей”, а:
+- лучше отделяет target leak от justified storage
+- не ломает precision на public/official/template хвосте
+- не приводит к захламлению финального `result.csv`

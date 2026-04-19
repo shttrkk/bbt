@@ -4,7 +4,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from pdn_scanner.config import AppConfig
-from pdn_scanner.enums import FileFormat, UZLevel
+from pdn_scanner.enums import FileFormat, StorageClass, UZLevel
 from pdn_scanner.models import FileScanResult
 
 STRUCTURED_CORRELATION_FORMATS = {FileFormat.CSV, FileFormat.JSON, FileFormat.PARQUET, FileFormat.XLS}
@@ -69,6 +69,9 @@ def apply_cross_file_promotion(results: list[FileScanResult], config: AppConfig)
 
 
 def _demote_weak_singletons(result: FileScanResult) -> FileScanResult:
+    if result.storage_class != StorageClass.TARGET_LEAK:
+        return result
+
     categories = frozenset(result.counts_by_category)
     if categories not in WEAK_SINGLETON_CATEGORIES:
         return result
@@ -92,7 +95,7 @@ def _apply_large_structured_pair_promotion(
     structured = [
         (index, result)
         for index, result in directory_results
-        if result.file.detected_format in STRUCTURED_CORRELATION_FORMATS
+        if result.file.detected_format in STRUCTURED_CORRELATION_FORMATS and _eligible_for_leak_promotion(result)
     ]
     name_candidates = [
         index
@@ -123,6 +126,8 @@ def _apply_shared_linkage_promotion(
     links: dict[str, set[int]] = defaultdict(set)
     present_indexes = {index for index, result in directory_results if result.detections}
     for index, result in directory_results:
+        if not _eligible_for_leak_promotion(result):
+            continue
         for detection in result.detections:
             if detection.category not in LINKABLE_HASH_CATEGORIES or not detection.value_hash:
                 continue
@@ -173,7 +178,7 @@ def _apply_small_directory_bundle_promotion(
     candidates = [
         index
         for index, result in directory_results
-        if result.detections and result.file.detected_format in CORRELATION_FORMATS
+        if result.detections and result.file.detected_format in CORRELATION_FORMATS and _eligible_for_leak_promotion(result)
     ]
     if len(candidates) < 2 or len(candidates) > SMALL_DIRECTORY_MAX_FILES:
         return
@@ -235,12 +240,18 @@ def _is_large_weak_candidate(result: FileScanResult, *, target_category: str, co
 def _promote_cross_file_bundle(result: FileScanResult, target_level: UZLevel, reason: str) -> FileScanResult:
     merged_reasons = _merged_reasons(result.classification_reasons, reason)
     if UZ_RANK.get(result.assigned_uz, 0) >= UZ_RANK.get(target_level, 0):
-        return result.model_copy(update={"classification_reasons": merged_reasons})
+        return result.model_copy(
+            update={
+                "classification_reasons": merged_reasons,
+                "storage_class": StorageClass.TARGET_LEAK,
+            }
+        )
 
     return result.model_copy(
         update={
             "assigned_uz": target_level,
             "classification_reasons": merged_reasons,
+            "storage_class": StorageClass.TARGET_LEAK,
         }
     )
 
@@ -255,3 +266,7 @@ def _merged_reasons(reasons: list[str], reason: str) -> list[str]:
     if reason in reasons:
         return reasons
     return [*reasons, reason]
+
+
+def _eligible_for_leak_promotion(result: FileScanResult) -> bool:
+    return result.storage_class == StorageClass.TARGET_LEAK

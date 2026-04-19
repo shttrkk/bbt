@@ -7,13 +7,14 @@ from functools import lru_cache
 from pathlib import Path
 from urllib.parse import unquote
 
-from PIL import Image, ImageOps
+from PIL import Image, ImageFilter, ImageOps
 
 from pdn_scanner.config import AppConfig
 
 OCR_RENDER_DPI = 200
 OCR_TIMEOUT_SECONDS = 20
 OCR_MAX_EDGE_PX = 2500
+OCR_BINARIZE_THRESHOLD = 170
 OCR_SHORTLIST_MARKERS = (
     "anket",
     "anketa",
@@ -44,6 +45,11 @@ OCR_SHORTLIST_MARKERS = (
     "consent",
     "questionnaire",
     "home_office",
+    "scan",
+    "скан",
+    "curriculum vitae",
+    "resume",
+    "cv",
 )
 OCR_PUBLIC_SKIP_MARKERS = (
     "выгрузки/сайты",
@@ -118,7 +124,12 @@ def should_attempt_image_ocr(rel_path: str | Path, config: AppConfig) -> bool:
     if _matches_shortlist(normalized, config):
         return True
 
-    if suffix in {".tif", ".tiff"} and "архив сканы" in normalized:
+    if suffix in {".tif", ".tiff"}:
+        return True
+
+    if suffix in {".jpg", ".jpeg", ".png", ".bmp"} and any(
+        marker in normalized for marker in ("архив сканы", "scan", "скан", "passport", "паспорт")
+    ):
         return True
 
     return False
@@ -146,11 +157,11 @@ def available_tesseract_languages() -> set[str]:
 
 
 def run_tesseract_ocr(image: Image.Image, config: AppConfig, *, psm: int = 6) -> OCRExecutionResult:
-    warnings: list[str] = []
     available = available_tesseract_languages()
     if not available:
         return OCRExecutionResult(text="", language="", warnings=["OCR unavailable: tesseract not found"])
 
+    warnings: list[str] = []
     requested = [part.strip() for part in config.ocr.language.split("+") if part.strip()]
     selected = [language for language in requested if language in available]
     if not selected:
@@ -164,29 +175,30 @@ def run_tesseract_ocr(image: Image.Image, config: AppConfig, *, psm: int = 6) ->
             f"OCR partial language match for requested set '{config.ocr.language}', used='{'+'.join(selected)}'"
         )
 
+    language = "+".join(selected)
     prepared = _prepare_image_for_ocr(image, min_edge_px=config.ocr.min_image_edge_px)
-    with tempfile.NamedTemporaryFile(suffix=".png") as tmp:
-        prepared.save(tmp.name)
-        try:
-            proc = subprocess.run(
-                ["tesseract", tmp.name, "stdout", "-l", "+".join(selected), "--psm", str(psm)],
-                capture_output=True,
-                text=True,
-                timeout=OCR_TIMEOUT_SECONDS,
-            )
-        except subprocess.TimeoutExpired:
-            warnings.append(f"OCR timed out after {OCR_TIMEOUT_SECONDS}s")
-            return OCRExecutionResult(text="", language="+".join(selected), warnings=warnings)
+    candidates: list[tuple[float, OCRExecutionResult, str, int]] = []
+    for variant_name, variant in _prepare_ocr_variants(prepared):
+        for variant_psm in _psm_sequence(psm):
+            candidate = _run_tesseract_once(variant, language=language, psm=variant_psm)
+            score = _score_ocr_text(candidate.text)
+            candidates.append((score, candidate, variant_name, variant_psm))
 
-    if proc.returncode != 0:
-        error_text = (proc.stderr or "").strip() or "unknown tesseract error"
-        warnings.append(f"OCR failed: {error_text}")
-        return OCRExecutionResult(text="", language="+".join(selected), warnings=warnings)
+    if not candidates:
+        return OCRExecutionResult(text="", language=language, warnings=warnings)
+
+    best_score, best_candidate, best_variant, best_psm = max(
+        candidates,
+        key=lambda item: (item[0], len(item[1].text)),
+    )
+    merged_warnings = [*warnings, *best_candidate.warnings]
+    if best_score > 0 and (best_variant != "base" or best_psm != psm):
+        merged_warnings.append(f"OCR selected best variant '{best_variant}' with psm={best_psm}")
 
     return OCRExecutionResult(
-        text=" ".join(proc.stdout.split()),
-        language="+".join(selected),
-        warnings=warnings,
+        text=best_candidate.text,
+        language=best_candidate.language,
+        warnings=sorted(set(merged_warnings)),
     )
 
 
@@ -218,6 +230,76 @@ def _prepare_image_for_ocr(image: Image.Image, *, min_edge_px: int) -> Image.Ima
         prepared = prepared.resize(new_size, Image.Resampling.LANCZOS)
 
     return prepared
+
+
+def _prepare_ocr_variants(image: Image.Image) -> list[tuple[str, Image.Image]]:
+    return [
+        ("base", image),
+        ("binary", image.point(lambda value: 255 if value >= OCR_BINARIZE_THRESHOLD else 0)),
+        ("sharpen", image.filter(ImageFilter.SHARPEN)),
+    ]
+
+
+def _psm_sequence(psm: int) -> tuple[int, ...]:
+    variants = [psm]
+    for fallback in (11, 4):
+        if fallback not in variants:
+            variants.append(fallback)
+    return tuple(variants)
+
+
+def _run_tesseract_once(image: Image.Image, *, language: str, psm: int) -> OCRExecutionResult:
+    warnings: list[str] = []
+    with tempfile.NamedTemporaryFile(suffix=".png") as tmp:
+        image.save(tmp.name)
+        try:
+            proc = subprocess.run(
+                ["tesseract", tmp.name, "stdout", "-l", language, "--psm", str(psm)],
+                capture_output=True,
+                text=True,
+                timeout=OCR_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired:
+            warnings.append(f"OCR timed out after {OCR_TIMEOUT_SECONDS}s")
+            return OCRExecutionResult(text="", language=language, warnings=warnings)
+
+    if proc.returncode != 0:
+        error_text = (proc.stderr or "").strip() or "unknown tesseract error"
+        warnings.append(f"OCR failed: {error_text}")
+        return OCRExecutionResult(text="", language=language, warnings=warnings)
+
+    return OCRExecutionResult(
+        text=" ".join(proc.stdout.split()),
+        language=language,
+        warnings=warnings,
+    )
+
+
+def _score_ocr_text(text: str) -> float:
+    normalized = " ".join(text.split()).strip()
+    if not normalized:
+        return -1.0
+
+    tokens = [token.strip(".,:;()[]{}<>\"'") for token in normalized.split()]
+    alpha_chars = sum(char.isalpha() for char in normalized)
+    digit_chars = sum(char.isdigit() for char in normalized)
+    good_tokens = 0
+    noisy_tokens = 0
+    for token in tokens:
+        alpha_in_token = sum(char.isalpha() for char in token)
+        digit_in_token = sum(char.isdigit() for char in token)
+        if alpha_in_token >= 3 or digit_in_token >= 5:
+            good_tokens += 1
+        if alpha_in_token and digit_in_token:
+            noisy_tokens += 1
+
+    return (
+        good_tokens * 6
+        + min(len(tokens), 40)
+        + alpha_chars * 0.03
+        + digit_chars * 0.08
+        - noisy_tokens * 1.5
+    )
 
 
 def _normalized_rel_path(rel_path: str | Path) -> str:

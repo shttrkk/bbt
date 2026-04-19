@@ -1,63 +1,99 @@
 # Submission Notes
 
-## Что приложено
+## Финальный deliverable
 
-- `result.csv` — список файлов, содержащих признаки персональных данных, в формате:
-  - `size,time,name`
-- этот файл — краткое описание решения и способа запуска
+В корне репозитория зафиксирован финальный конкурсный файл:
 
-## Как получен результат
+- [result.csv](/Users/shttrkk/Downloads/ПДнDataset/result.csv)
 
-Использован локальный CLI-пайплайн проекта `pdn-scanner` версии `0.1.1`:
+Формат:
 
-`scan -> detect format -> dispatch extractor -> normalize -> detect -> quality-layer -> classify -> report`
+```text
+size,time,name
+```
 
-На текущем подтверждённом прогоне `v14` (`/tmp/pdn_submission_run_v14`) в итоговый submission реально попали:
+Этот файл является финальным release artifact и в текущей версии репозитория не должен пересобираться автоматически.
 
-- extractors: `txt`, `csv`, `json`, `html`
-- detectors: `email`, `phone`, `person_name`, `address`, `SNILS`, `INN`, `bank_card`, `birth_date_candidate`
+## Зафиксированный итоговый `result.csv`
+
+```csv
+size,time,name
+1750,mar 23 09:57,akt_priema_peredachi_rabochego_mesta.txt
+1385,mar 23 09:57,anketa_dms.txt
+650666,nov 09 19:41,customers.csv
+650666,sep 26 21:59,customers.csv
+1562,mar 23 09:57,doverennost_na_poluchenie_posylki.txt
+3563943,nov 09 19:41,logistics.csv
+3563943,sep 26 21:59,logistics.csv
+1689,mar 23 09:57,perepiska_email_dostavka_kresla.txt
+1542,mar 23 09:57,raspiska_poluchenie_noutbuka.txt
+1391,mar 23 09:57,servisnaya_zayavka_vyezd_inzhenera.txt
+2138,mar 23 09:57,soglasie_na_obrabotku_pd.txt
+1386,mar 23 09:57,zayavka_kompensaciya_interneta.txt
+1257,mar 23 09:57,zayavka_na_propusk_v_zhk.txt
+1372,mar 23 09:57,zayavlenie_dostavka_oborudovaniya_domoi.txt
+8879363,sep 26 22:01,physical.parquet
+```
+
+## Логика финальной поставки
+
+Задача решается в leak-aware постановке:
+
+- не любые ПДн считаются проблемой
+- target = подозрительное, избыточное или необоснованное хранение ПДн
+- justified/public/storage-safe документы должны подавляться
+
+Это означает, что в финальный список попадают не “все файлы с ПДн”, а только те, которые похожи на:
+- внутренние персональные формы
+- employee/home-office/service docs
+- consent/authority/request/handover docs
+- переписку с персональными bundle-сигналами
+- subject-level выгрузки физлиц
+
+## Базовый pipeline
+
+Проект использует локальный CLI-проход:
+
+`scan -> detect format -> dispatch extractor -> detect -> quality-layer -> leak-context -> classify -> report`
+
+Ключевые компоненты:
+
+- extractors:
+  `txt`, `csv`, `json`, `parquet`, `pdf`, `docx`, `rtf`, `xls/xlsx`, `html`, `image`, `doc`
+- detectors:
+  ordinary, government, payment, sensitive, biometric
 - quality-layer:
-  - `is_template`
-  - `is_public_doc`
-  - `is_reference_data`
-  - suppression HTML / JS / token noise
-  - suppression structured `id/token` noise
-- privacy-safe reporting и отбор только положительных файлов для submission-артефакта
+  template/public/reference suppression
+  structured-noise suppression
+  format-specific suppression для `html/pdf/docx/xls/image`
+- leak-aware layer:
+  genre detection
+  risk / justification / noise scoring
+  storage class
+- UZ classifier:
+  `UZ-1..UZ-4` или `NO_PDN`
 
-Важно:
+## Что важно для защиты
 
-- `pdf` extractor теперь реализован page-wise (`pypdf` + `pdfplumber` fallback, page scoring, selective OCR hooks, signature precheck), но на подтверждённом прогоне не дал ни одного валидного positive-файла;
-- `docx/xls/parquet/ocr` не добавили новых positive-файлов в подтверждённый submission;
-- в submission включены только positive-файлы, найденные текущим runnable CLI;
-- сам submission `result.csv` сохраняется в legacy-формате конкурса: `size,time,name`.
+Финальный `result.csv` фиксирован как release decision.
 
-## Запуск
+Это значит:
+- он не обязан совпадать с любым текущим exploratory rerun
+- он отражает финально выбранный submission set
+- код и документация объясняют, почему именно такие файлы считаются целевыми leak-like объектами
+
+## Как запускать проект
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-PYTHONPATH=src .venv/bin/python -m pdn_scanner.cli scan ../share --out /tmp/pdn_submission_run --config configs/default.yaml
+PYTHONPATH=src .venv/bin/python -m pdn_scanner.cli scan share --out /tmp/pdn_run --config configs/default.yaml
 ```
 
-Далее `result.csv` собирается из положительных записей полного прогона с преобразованием в требуемый формат submission:
-
-- `size` — размер файла в байтах
-- `time` — `mtime` файла в формате `sep 26 18:31`
-- `name` — имя файла без пути
-
-Правило отбора:
-
-- в `result.csv` попадают файлы, для которых итоговый `assigned_uz != NO_PDN`
-- это означает, что шаблоны, public-policy-like документы и reference-like structured файлы без устойчивых PD signals в submission не попадают
-
-## Что лежит в корне проекта
-
-- `result.csv`
-- `SUBMISSION.md`
-
-Полные privacy-safe артефакты полного прогона лежат в output-директории запуска:
-
+Выходы обычного запуска:
 - `summary.csv`
 - `report.json`
 - `report.md`
+
+Они используются как privacy-safe технические артефакты анализа, но не заменяют финальный зафиксированный `result.csv`.

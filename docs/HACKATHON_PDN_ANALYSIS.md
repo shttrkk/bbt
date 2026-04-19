@@ -1,41 +1,54 @@
-# Submission-Oriented PDN Analysis
+# Leak-Aware Problem Interpretation
 
-Этот документ больше не описывает greenfield workspace. Актуальное состояние проекта определяется [SUBMISSION.md](/Users/shttrkk/Downloads/ПДнDataset/SUBMISSION.md).
+## Как задача понимается в финальной версии проекта
 
-## Главный вывод
+Исходный кейс звучит как поиск персональных данных в файловом хранилище.
 
-Финальный submission был построен не на широкой поддержке всех форматов из кейса, а на precision-first контуре:
+Финальная проектная интерпретация уже более узкая и практическая:
 
-- рабочие extractors только для `txt`, `csv`, `json`, `html`
-- quality-layer обязателен и находится в critical path
-- positive-only export важнее широкого, но шумного покрытия
+- наличие ПДн само по себе не равно инциденту
+- риск возникает, когда ПДн хранятся вне разумного контекста
+- target — suspicious / leak-like / unjustified storage
 
-## Почему текущий submission выглядит именно так
+## Что считается target
 
-- самые устойчивые сигналы были получены на текстовых и structured-lite форматах
-- document-heavy и OCR-heavy форматы без качественного extraction дают слишком много шума
-- public-policy, template и reference-like документы создают заметный false-positive риск без отдельного suppression слоя
+Типовые target leak-классы:
+- анкеты
+- employee forms
+- доверенности
+- consent docs
+- applicant docs
+- handover / service / access request docs
+- correspondence с персональным bundle
+- subject-level exports физлиц
+- фото/сканы персональных документов
 
-## Что считается актуальным baseline
+## Что не должно автоматически считаться target
 
-`scan -> detect format -> dispatch extractor -> normalize -> detect -> quality-layer -> classify -> report`
+- публичные contact directories
+- официальные contact docs
+- public reports
+- policies
+- public disclosures
+- орг-реквизиты
+- blank templates
 
-Реально значимые шаги:
+## Почему это важно
 
-- ordinary detection: `email`, `phone`, `person_name`, `address`, `birth_date_candidate`
-- government detection: `SNILS`, `INN`
-- payment detection: `bank_card`
-- quality flags: `is_template`, `is_public_doc`, `is_reference_data`
-- финальный фильтр: в submission уходят только файлы с `assigned_uz != NO_PDN`
+Если классифицировать всё по принципу “нашли ПДн -> positive”, система быстро захламляется:
+- staff contacts
+- public university/corporate docs
+- declarations and reports
+- legal/policy docs
+- structured business/reference exports
 
-## Ограничения текущей поставки
+Именно поэтому финальная версия строится вокруг:
+- genre
+- anchors and bundles
+- sensitivity
+- public/private justification
+- storage context
 
-- `pdf/docx/xls/parquet/ocr` не используются как полноценные источники текущего submission-результата
-- package version в коде пока не догнана до документированного submission-label `v0.1.1`
-- sensitive/biometric path остается вспомогательным и не определяет основной результат текущего запуска
+## Практический вывод
 
-## Что важно сохранить при следующей итерации
-
-1. Не размывать precision ради формального покрытия всех форматов.
-2. Расширять extractors только вместе с anti-false-positive логикой.
-3. Держать `SUBMISSION.md` главным источником истины для итоговой поставки.
+В защите нужно объяснять, что проект решает задачу ближе к DLP / privacy risk triage, чем к naive entity spotting.

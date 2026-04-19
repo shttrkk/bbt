@@ -16,3 +16,11 @@ outputs/
 summary.csv
 report.json
 report.md
+/tmp/
+/docs/codex/
+/submission_probes/
+/candidate_submission_review*.csv
+/watch*.md
+/test.ipynb
+/status/FULL_AUDIT_*.md
+/status/LEAK_REFRAME_*.md

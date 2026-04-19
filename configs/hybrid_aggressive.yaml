@@ -38,10 +38,10 @@ detection:
 ocr:
   mode: "auto"
   language: rus+eng
-  max_pages_per_file: 10
-  max_images_per_file: 20
+  max_pages_per_file: 12
+  max_images_per_file: 25
   min_image_edge_px: 600
-  auto_pdf_page_limit: 0
+  auto_pdf_page_limit: 12
   shortlist_manifest_path: configs/shortlists/hybrid_aggressive.txt
   shortlist_path_contains:
     - "выгрузки/сайты/доки/contract"

@@ -57,6 +57,9 @@ def test_cli_scan_generates_privacy_safe_reports(tmp_path: Path) -> None:
     assert "is_template" in file_result
     assert "is_public_doc" in file_result
     assert "is_reference_data" in file_result
+    assert "storage_class" in file_result
+    assert "primary_genre" in file_result
+    assert "genre_tags" in file_result
     assert file_result["detections"]
     first_detection = file_result["detections"][0]
     assert "entity_category" in first_detection

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pdn_scanner.config import load_config
-from pdn_scanner.enums import ConfidenceLevel, ContentStatus, FileFormat, UZLevel
+from pdn_scanner.enums import ConfidenceLevel, ContentStatus, FileFormat, StorageClass, UZLevel
 from pdn_scanner.models import DetectionResult, ExtractedContent, FileDescriptor, FileScanResult
 from pdn_scanner.submission import apply_cross_file_promotion
 
@@ -12,6 +12,7 @@ def _result(
     file_format: FileFormat,
     assigned_uz: UZLevel,
     counts_by_category: dict[str, int],
+    storage_class: StorageClass = StorageClass.TARGET_LEAK,
     detections: list[DetectionResult] | None = None,
 ) -> FileScanResult:
     return FileScanResult(
@@ -25,6 +26,9 @@ def _result(
         extraction=ExtractedContent(file_path=rel_path, status=ContentStatus.OK, text_chunks=[]),
         detections=detections or [],
         assigned_uz=assigned_uz,
+        storage_class=storage_class,
+        primary_genre="personal_export",
+        genre_tags=["personal_export"],
         counts_by_category=counts_by_category,
         counts_by_family={"ordinary": sum(counts_by_category.values())} if counts_by_category else {},
         classification_reasons=["ORDINARY_LARGE_VOLUME"] if assigned_uz != UZLevel.NO_PDN else [],
@@ -169,3 +173,31 @@ def test_small_directory_bundle_promotes_weak_files_together() -> None:
     assert adjusted[1].assigned_uz == UZLevel.UZ4
     assert "CROSS_FILE_SMALL_DIRECTORY_BUNDLE" in adjusted[0].classification_reasons
     assert "CROSS_FILE_SMALL_DIRECTORY_BUNDLE" in adjusted[1].classification_reasons
+
+
+def test_cross_file_does_not_promote_justified_storage() -> None:
+    config = load_config("configs/default.yaml")
+    results = [
+        _result(
+            rel_path="public_directory/unit_a.pdf",
+            file_format=FileFormat.PDF,
+            assigned_uz=UZLevel.NO_PDN,
+            storage_class=StorageClass.PD_BUT_JUSTIFIED_STORAGE,
+            counts_by_category={"person_name": 1, "phone": 1},
+            detections=[_detection("person_name"), _detection("phone", value_hash="shared-1")],
+        ),
+        _result(
+            rel_path="public_directory/unit_b.pdf",
+            file_format=FileFormat.PDF,
+            assigned_uz=UZLevel.NO_PDN,
+            storage_class=StorageClass.PD_BUT_JUSTIFIED_STORAGE,
+            counts_by_category={"email": 1},
+            detections=[_detection("email", value_hash="shared-1")],
+        ),
+    ]
+
+    adjusted = apply_cross_file_promotion(results, config)
+
+    assert adjusted[0].assigned_uz == UZLevel.NO_PDN
+    assert adjusted[1].assigned_uz == UZLevel.NO_PDN
+    assert "CROSS_FILE_SHARED_LINKAGE_BUNDLE" not in adjusted[0].classification_reasons

@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 
 from pdn_scanner.config import AppConfig
-from pdn_scanner.enums import ConfidenceLevel, UZLevel, ValidationStatus
+from pdn_scanner.enums import ConfidenceLevel, StorageClass, UZLevel, ValidationStatus
 from pdn_scanner.models import DetectionResult
 
 
@@ -15,6 +15,11 @@ class UZClassifier:
         self,
         detections: list[DetectionResult],
         *,
+        storage_class: StorageClass = StorageClass.NON_TARGET,
+        primary_genre: str = "unknown",
+        risk_score: int = 0,
+        justification_score: int = 0,
+        noise_score: int = 0,
         is_template: bool = False,
         is_public_doc: bool = False,
         is_reference_data: bool = False,
@@ -22,18 +27,35 @@ class UZClassifier:
     ) -> tuple[UZLevel, list[str], dict[str, dict[str, int]]]:
         family_summary = self._build_family_summary(detections)
         reasons: list[str] = list(quality_reasons or [])
+        reasons.extend(
+            [
+                f"STORAGE_CLASS:{storage_class.value}",
+                f"PRIMARY_GENRE:{primary_genre}",
+                f"RISK_SCORE:{risk_score}",
+                f"JUSTIFICATION_SCORE:{justification_score}",
+                f"NOISE_SCORE:{noise_score}",
+            ]
+        )
+
+        if storage_class == StorageClass.PD_BUT_JUSTIFIED_STORAGE:
+            reasons.append("JUSTIFIED_STORAGE_SUPPRESSED")
+            return UZLevel.NO_PDN, sorted(set(reasons)), family_summary
+
+        if storage_class != StorageClass.TARGET_LEAK:
+            reasons.append("NON_LEAK_CONTEXT_SUPPRESSED")
+            return UZLevel.NO_PDN, sorted(set(reasons)), family_summary
 
         if is_template and not self._has_trusted_detections(detections):
             reasons.append("TEMPLATE_SUPPRESSED")
-            return UZLevel.NO_PDN, reasons, family_summary
+            return UZLevel.NO_PDN, sorted(set(reasons)), family_summary
 
-        if is_public_doc and self._public_doc_weak_signals_only(detections):
-            reasons.append("PUBLIC_DOC_WEAK_SIGNALS_ONLY")
-            return UZLevel.NO_PDN, reasons, family_summary
+        if is_public_doc and not self._has_validated_or_sensitive(detections):
+            reasons.append("PUBLIC_DOC_SUPPRESSED")
+            return UZLevel.NO_PDN, sorted(set(reasons)), family_summary
 
         if is_reference_data and not self._has_trusted_detections(detections):
-            reasons.append("REFERENCE_DATA_WEAK_SIGNALS_ONLY")
-            return UZLevel.NO_PDN, reasons, family_summary
+            reasons.append("REFERENCE_DATA_SUPPRESSED")
+            return UZLevel.NO_PDN, sorted(set(reasons)), family_summary
 
         ordinary_present = self._family_present("ordinary", detections)
         government_present = self._family_present("government", detections)
@@ -44,31 +66,31 @@ class UZClassifier:
         biometric_present = self._family_present("biometric", detections)
 
         if special_present or biometric_present:
-            reasons.append("SPECIAL_OR_BIOMETRIC_PRESENT")
-            return self._apply_quality_caps(UZLevel.UZ1, reasons, ordinary_present, is_template, is_public_doc, is_reference_data), reasons, family_summary
+            reasons.append("LEAK_SPECIAL_OR_BIOMETRIC")
+            return UZLevel.UZ1, sorted(set(reasons)), family_summary
 
         if payment_present:
-            reasons.append("VALIDATED_PAYMENT_PRESENT")
-            return self._apply_quality_caps(UZLevel.UZ2, reasons, ordinary_present, is_template, is_public_doc, is_reference_data), reasons, family_summary
+            reasons.append("LEAK_VALIDATED_PAYMENT")
+            return UZLevel.UZ2, sorted(set(reasons)), family_summary
 
         if self._is_large("government", family_summary):
-            reasons.append("GOVERNMENT_LARGE_VOLUME")
-            return self._apply_quality_caps(UZLevel.UZ2, reasons, ordinary_present, is_template, is_public_doc, is_reference_data), reasons, family_summary
+            reasons.append("LEAK_GOVERNMENT_LARGE_VOLUME")
+            return UZLevel.UZ2, sorted(set(reasons)), family_summary
 
         if government_present:
-            reasons.append("GOVERNMENT_PRESENT")
-            return self._apply_quality_caps(UZLevel.UZ3, reasons, ordinary_present, is_template, is_public_doc, is_reference_data), reasons, family_summary
+            reasons.append("LEAK_GOVERNMENT_PRESENT")
+            return UZLevel.UZ3, sorted(set(reasons)), family_summary
 
         if self._is_large("ordinary", family_summary):
-            reasons.append("ORDINARY_LARGE_VOLUME")
-            return self._apply_quality_caps(UZLevel.UZ3, reasons, ordinary_present, is_template, is_public_doc, is_reference_data), reasons, family_summary
+            reasons.append("LEAK_ORDINARY_LARGE_VOLUME")
+            return UZLevel.UZ3, sorted(set(reasons)), family_summary
 
         if ordinary_present:
-            reasons.append("ORDINARY_PRESENT")
-            return self._apply_quality_caps(UZLevel.UZ4, reasons, ordinary_present, is_template, is_public_doc, is_reference_data), reasons, family_summary
+            reasons.append("LEAK_ORDINARY_PRESENT")
+            return UZLevel.UZ4, sorted(set(reasons)), family_summary
 
-        reasons.append("NO_STRONG_PDN_SIGNALS")
-        return UZLevel.NO_PDN, reasons, family_summary
+        reasons.append("LEAK_CONTEXT_WITHOUT_TRUSTED_PDN")
+        return UZLevel.NO_PDN, sorted(set(reasons)), family_summary
 
     def _family_present(self, family: str, detections: list[DetectionResult]) -> bool:
         for detection in detections:
@@ -133,16 +155,6 @@ class UZClassifier:
 
         return False
 
-    def _public_doc_weak_signals_only(self, detections: list[DetectionResult]) -> bool:
-        if not detections:
-            return True
-
-        return not any(
-            detection.category in {"person_name", "address", "birth_date", "birth_place"}
-            or (detection.family in {"government", "payment"} and detection.validation_status == ValidationStatus.VALID)
-            for detection in detections
-        )
-
     def _has_trusted_detections(self, detections: list[DetectionResult]) -> bool:
         return any(
             (detection.family in {"government", "payment"} and detection.validation_status == ValidationStatus.VALID)
@@ -153,25 +165,9 @@ class UZClassifier:
             for detection in detections
         )
 
-    def _apply_quality_caps(
-        self,
-        level: UZLevel,
-        reasons: list[str],
-        ordinary_present: bool,
-        is_template: bool,
-        is_public_doc: bool,
-        is_reference_data: bool,
-    ) -> UZLevel:
-        if is_template and level in {UZLevel.UZ1, UZLevel.UZ2, UZLevel.UZ3}:
-            reasons.append("TEMPLATE_RISK_REDUCED")
-            return UZLevel.UZ4 if ordinary_present else UZLevel.NO_PDN
-
-        if is_public_doc and level in {UZLevel.UZ1, UZLevel.UZ2, UZLevel.UZ3}:
-            reasons.append("PUBLIC_DOC_RISK_REDUCED")
-            return UZLevel.UZ4 if ordinary_present else UZLevel.NO_PDN
-
-        if is_reference_data and level in {UZLevel.UZ2, UZLevel.UZ3}:
-            reasons.append("REFERENCE_DATA_RISK_REDUCED")
-            return UZLevel.UZ4 if ordinary_present else UZLevel.NO_PDN
-
-        return level
+    def _has_validated_or_sensitive(self, detections: list[DetectionResult]) -> bool:
+        return any(
+            detection.family in {"special", "biometric"}
+            or (detection.family in {"government", "payment"} and detection.validation_status == ValidationStatus.VALID)
+            for detection in detections
+        )

@@ -1,53 +1,24 @@
-# Submission-Aligned Solution Plan
+# Final Solution Plan
 
-Этот план приведен к состоянию после подготовки актуального submission.
+## Итоговая формула решения
 
-## Что уже принято как рабочее решение
+1. Обойти файловое хранилище.
+2. Извлечь текст/структуру из разных форматов.
+3. Найти кандидатные персональные сигналы.
+4. Убрать шаблоны, public docs, reference noise и format-specific шум.
+5. Определить жанр документа и контекст хранения.
+6. Оценить, похож ли файл на leak-like storage.
+7. Классифицировать итоговый риск и подготовить privacy-safe отчёт.
+8. Зафиксировать финальный submission отдельным `result.csv`.
 
-- submission собирается локальным CLI-проходом
-- `result.csv` содержит только positive-файлы в формате `size,time,name`
-- основной вклад в качество дают не новые extractors, а quality-layer и строгий post-detection отбор
+## Почему решение именно такое
 
-## Зафиксированный рабочий контур
+- entity detection сама по себе недостаточна
+- основные ошибки возникают на public/template/report хвосте
+- качество обеспечивается не только detector-ами, но и quality + leak-context слоями
 
-`scan -> detect format -> dispatch extractor -> normalize -> detect -> quality-layer -> classify -> report`
+## Что важно на защите
 
-В текущем submission-контуре реально используются:
-
-- `txt`
-- `csv`
-- `json`
-- `html`
-
-## Что обязательно учитывать дальше
-
-### 1. Precision важнее nominal coverage
-
-Расширение на `pdf/docx/xls/parquet/ocr` имеет смысл только если:
-
-- extraction стабилен
-- false positive не растет неконтролируемо
-- новые форматы не ломают нынешний positive-only export
-
-### 2. Quality-layer является частью core logic
-
-Без следующих проверок submission становится заметно хуже:
-
-- `is_template`
-- `is_public_doc`
-- `is_reference_data`
-- suppression HTML / JS / token noise
-- suppression structured `id/token` noise
-
-### 3. Submission и roadmap нельзя больше смешивать
-
-В документации должно быть явно разделено:
-
-- текущее поставленное решение
-- следующие итерации разработки
-
-## Следующий этап после submission
-
-1. Реализовать extraction для `pdf/docx/xls/parquet`.
-2. Проверить recall/precision на шумных наборах до включения новых форматов в submission flow.
-3. Только после этого рассматривать OCR и scanned-PDF fallback.
+- показать, что решение explainable
+- показать, что есть разделение `TARGET_LEAK` / `JUSTIFIED_STORAGE` / `NON_TARGET`
+- показать, что итоговый submission — это осознанный release choice, а не dump всех positives из exploratory запусков
