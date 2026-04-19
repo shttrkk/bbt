@@ -122,5 +122,5 @@ PYTHONPATH=src .venv/bin/python -m pdn_scanner.cli scan share --out /tmp/pdn_run
 
 - [SUBMISSION.md](/Users/shttrkk/Downloads/ПДнDataset/SUBMISSION.md)
 - [docs/architecture.md](/Users/shttrkk/Downloads/ПДнDataset/docs/architecture.md)
+- [docs/HACKATHON_CASE.md](/Users/shttrkk/Downloads/ПДнDataset/docs/HACKATHON_CASE.md)
 - [PROJECT_STRUCTURE_FOR_DEFENSE.md](/Users/shttrkk/Downloads/ПДнDataset/PROJECT_STRUCTURE_FOR_DEFENSE.md)
-- [status/IMPLEMENTATION_STATUS.md](/Users/shttrkk/Downloads/ПДнDataset/status/IMPLEMENTATION_STATUS.md)
