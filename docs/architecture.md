@@ -2,98 +2,74 @@
 
 ## Source Of Truth
 
-Текущая архитектура следует решениям из:
+Финальная поставка описана в [SUBMISSION.md](/Users/shttrkk/Downloads/ПДнDataset/SUBMISSION.md).
 
-- `HACKATHON_PDN_ANALYSIS.md`
-- `HACKATHON_SOLUTION_PLAN.md`
+Актуальный submission-baseline:
 
-Ключевой baseline:
-
-`scan -> detect format -> dispatch extractor -> normalize -> detect candidates -> validate -> aggregate -> classify(UZ) -> report`
+`scan -> detect format -> dispatch extractor -> normalize -> detect -> quality-layer -> classify -> report`
 
 ## Pipeline
 
 1. `scanner.walker`
-   Рекурсивный обход каталога, сбор `FileDescriptor`, обработка ошибок доступа, пропуск скрытых путей по конфигу.
+   Рекурсивный обход каталога и сбор `FileDescriptor`.
 2. `scanner.format_detector`
-   Определение формата по extension и опционально по MIME с graceful fallback.
+   Определение формата по extension и опционально по MIME.
 3. `scanner.dispatcher`
-   Routing `format -> extractor`, unsupported форматы не валят run.
+   Routing `format -> extractor`.
 4. `extractors.*`
-   Извлечение текста и структуры из конкретного формата.
+   В submission реально используются `txt`, `csv`, `json`, `html`.
 5. `normalize.*`
-   Unicode/whitespace/value normalization и context windows.
+   Нормализация текста, whitespace и значений.
 6. `detectors.*`
-   Поиск baseline-кандидатов ПДн по категориям.
-7. `validators.*`
-   Строгая валидация сущностей, где есть надежные алгоритмы.
+   Поиск baseline-кандидатов ПДн.
+7. `quality.*`
+   Снижение false positives через template/public-doc/reference-data/noise suppression.
 8. `classify.uz_engine`
    Explainable rules engine для `УЗ-1..УЗ-4` и `NO_PDN`.
 9. `reporting.*`
-   Privacy-safe output в `CSV`, `JSON`, `Markdown`.
+   Privacy-safe output и сборка submission-артефакта.
 
-## Слои проекта
+## Submission-Relevant Components
 
-- `scanner`
-  Технический слой traversal/routing.
-- `extractors`
-  Format-aware extraction layer.
-- `normalize`
-  Канонизация текста и значений.
-- `detectors`
-  Candidate generation по семействам `ordinary`, `government`, `payment`, `sensitive`.
-- `validators`
-  Независимые проверяемые валидаторы.
-- `classify`
-  Config-driven UZ classification.
-- `reporting`
-  Privacy-safe artifact generation.
-- `runtime`
-  Логирование, ошибки, метрики.
+- Extractors: `txt`, `csv`, `json`, `html`
+- Detectors: `email`, `phone`, `person_name`, `address`, `SNILS`, `INN`, `bank_card`, `birth_date_candidate`
+- Quality flags:
+  - `is_template`
+  - `is_public_doc`
+  - `is_reference_data`
+- Export rule:
+  - в `result.csv` попадают только файлы с `assigned_uz != NO_PDN`
 
-## Internal Data Flow
+## Planned But Not Submission-Critical
 
-`FileDescriptor`
--> `ExtractedContent`
--> `DetectionResult[]`
--> `FileScanResult`
--> `RunSummary`
+В кодовой базе есть hooks или заглушки для:
 
-В `models.py` заданы единые typed-контракты между слоями. В persisted artifacts не сериализуются `raw_value` и `normalized_value`.
+- `pdf`
+- `docx`
+- `rtf`
+- `xls/xlsx`
+- `parquet`
+- `image` / OCR
+- `doc`
+- `mp4`
+
+Эти направления не были полноценными источниками финального submission-результата текущей версии.
 
 ## Privacy-Safe Reporting
 
-Принципы:
-
-- raw PII не сохраняется в `CSV/JSON/Markdown`;
-- для корреляции используются короткие salted hashes;
-- `masked_preview` включается только при флаге `include_masked_samples`;
-- логи не печатают полные совпадения;
-- JSON report хранит только категории, counts, статусы, хэши, location hints и reason codes.
+- raw PII не сохраняется в `CSV/JSON/Markdown`
+- итоговый submission использует только positive-only export
+- отчеты сохраняют counts, categories, hashes, reason codes и quality-flags без полного раскрытия значений
 
 ## UZ Classification
 
-Классификация соответствует рекомендациям из аналитики:
-
-- `УЗ-1`
-  special/biometric signals;
-- `УЗ-2`
-  validated payment data или большой объем government IDs;
-- `УЗ-3`
-  presence government IDs или большой объем ordinary PII;
-- `УЗ-4`
-  ordinary PII малого объема;
 - `NO_PDN`
-  признаки ПДн не набрали заданные пороги.
-
-Пороги вынесены в `configs/*.yaml`. Движок хранит `classification_reasons`, чтобы решение было explainable.
-
-## Planned Hooks
-
-Planned, но не fully implemented в `v0.1.0`:
-
-- selective OCR для `image` и scanned `PDF`;
-- legacy `DOC` fallback chain;
-- `MP4` metadata/frame/subtitle extraction;
-- anti-false-positive heuristics для шаблонов и public policy docs;
-- chunked large-file processing для `Parquet/XLS/PDF`.
+  файл не набрал устойчивых PD signals после quality-layer
+- `УЗ-4`
+  ordinary PII малого объема
+- `УЗ-3`
+  government IDs или ordinary PII большего объема
+- `УЗ-2`
+  validated payment data или более рискованные government signals
+- `УЗ-1`
+  sensitive / biometric-like сигналы, если включены соответствующие detectors

@@ -138,7 +138,7 @@ class UZClassifier:
             return True
 
         return not any(
-            detection.category in {"person_name", "address", "birth_date_candidate"}
+            detection.category in {"person_name", "address", "birth_date", "birth_place"}
             or (detection.family in {"government", "payment"} and detection.validation_status == ValidationStatus.VALID)
             for detection in detections
         )
@@ -147,7 +147,7 @@ class UZClassifier:
         return any(
             (detection.family in {"government", "payment"} and detection.validation_status == ValidationStatus.VALID)
             or (
-                detection.category in {"person_name", "address", "birth_date_candidate"}
+                detection.category in {"person_name", "address", "birth_date", "birth_place"}
                 and detection.confidence in {ConfidenceLevel.HIGH, ConfidenceLevel.MEDIUM}
             )
             for detection in detections

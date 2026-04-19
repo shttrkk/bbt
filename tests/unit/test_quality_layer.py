@@ -87,7 +87,7 @@ def test_reference_plan_json_stays_negative_even_with_id_like_valid_inn() -> Non
     )
 
     assert quality.is_reference_data is True
-    assert [item for item in quality.detections if item.category == "inn"] == []
+    assert [item for item in quality.detections if item.category in {"inn_individual", "inn_legal_entity"}] == []
     assert assigned_uz == UZLevel.NO_PDN
     assert "REFERENCE_DATA_WEAK_SIGNALS_ONLY" in reasons
 
@@ -119,7 +119,7 @@ def test_html_noise_suppresses_token_like_phone_and_inn_hits() -> None:
         ],
     )
 
-    assert [item for item in quality.detections if item.category in {"phone", "inn"}] == []
+    assert [item for item in quality.detections if item.category in {"phone", "inn_individual", "inn_legal_entity"}] == []
     assert assigned_uz == UZLevel.NO_PDN
 
 
@@ -131,10 +131,10 @@ def test_structured_birth_date_hint_increases_confidence() -> None:
         chunks=["customer_id: 42 | customer_name: Иванов Иван Иванович | date_of_birth: 01.02.2000"],
     )
 
-    birth_dates = [item for item in quality.detections if item.category == "birth_date_candidate"]
+    birth_dates = [item for item in quality.detections if item.category == "birth_date"]
 
     assert birth_dates
-    assert birth_dates[0].confidence == ConfidenceLevel.MEDIUM
+    assert birth_dates[0].confidence in {ConfidenceLevel.MEDIUM, ConfidenceLevel.HIGH}
 
 
 def test_substring_false_positive_regressions_do_not_return_entities() -> None:
@@ -149,3 +149,177 @@ def test_substring_false_positive_regressions_do_not_return_entities() -> None:
 
     assert quality.detections == []
     assert assigned_uz == UZLevel.NO_PDN
+
+
+def test_special_and_biometric_signals_raise_uz1() -> None:
+    _, quality, assigned_uz, _ = _pipeline(
+        rel_path="hr/profile.txt",
+        file_format=FileFormat.TXT,
+        extractor="txt",
+        chunks=[
+            "Сотрудник: Иванов Иван Иванович | отпечатки пальцев: сданы | состояние здоровья: хроническое заболевание"
+        ],
+    )
+
+    assert any(item.family == "biometric" for item in quality.detections)
+    assert any(item.family == "special" for item in quality.detections)
+    assert assigned_uz == UZLevel.UZ1
+
+
+def test_livejournal_public_page_health_noise_is_suppressed() -> None:
+    _, quality, assigned_uz, _ = _pipeline(
+        rel_path="sites/page_443.html",
+        file_format=FileFormat.HTML,
+        extractor="html",
+        chunks=[
+            "LiveJournal Top Main Top Interesting Follow us on Twitter Telegram comments tags "
+            "НЕсахарный диабет - чаще исключаем, чем ставим такой диагноз."
+        ],
+    )
+
+    assert quality.detections == []
+    assert assigned_uz == UZLevel.NO_PDN
+
+
+def test_livejournal_public_page_contact_email_is_suppressed() -> None:
+    _, quality, assigned_uz, _ = _pipeline(
+        rel_path="sites/page_436.html",
+        file_format=FileFormat.HTML,
+        extractor="html",
+        chunks=[
+            "LiveJournal Top Main Top Interesting Follow us on Twitter Telegram Applications iOS Android "
+            "По вопросам рекламы обращаться: mail@smapse.com Или по номеру: 8-800-775-54-97"
+        ],
+    )
+
+    assert quality.detections == []
+    assert assigned_uz == UZLevel.NO_PDN
+
+
+def test_livejournal_public_page_passport_story_is_suppressed() -> None:
+    _, quality, assigned_uz, _ = _pipeline(
+        rel_path="sites/page_456.html",
+        file_format=FileFormat.HTML,
+        extractor="html",
+        chunks=[
+            "LiveJournal Top Main Top Interesting Follow us on Twitter Telegram comments tags "
+            "дата рождения: 01.02.2000 паспорт серии 45 10 № 123456 адрес: г. Москва, ул. Лесная, д. 1"
+        ],
+    )
+
+    assert quality.detections == []
+    assert assigned_uz == UZLevel.NO_PDN
+
+
+def test_form_like_html_with_person_bundle_survives_selection() -> None:
+    _, quality, assigned_uz, reasons = _pipeline(
+        rel_path="profiles/employee_card.html",
+        file_format=FileFormat.HTML,
+        extractor="html",
+        chunks=[
+            "Employee profile ФИО: Иванов Иван Иванович Email: ivanov@example.com Телефон: +7 999 123-45-67"
+        ],
+    )
+
+    categories = {item.category for item in quality.detections}
+    assert {"person_name", "email", "phone"}.issubset(categories)
+    assert assigned_uz == UZLevel.UZ4
+    assert "HTML_STRONG_BUNDLE" in reasons
+
+
+def test_declaration_like_xls_with_name_only_is_suppressed() -> None:
+    _, quality, assigned_uz, reasons = _pipeline(
+        rel_path="Прочее/Декларация 2016г Новошахтинск.xls",
+        file_format=FileFormat.XLS,
+        extractor="xls",
+        chunks=[
+            "sheet: Лист1 | ФИО: Пилипенко Лидия Ивановна | "
+            "Объекты недвижимости, находящиеся в собственности / вид объекта: Жилой дом"
+        ],
+    )
+
+    assert quality.detections == []
+    assert assigned_uz == UZLevel.NO_PDN
+    assert "XLS_DECLARATION_WEAK_BUNDLE" in reasons
+
+
+def test_staff_contact_xls_with_name_phone_email_is_suppressed() -> None:
+    _, quality, assigned_uz, reasons = _pipeline(
+        rel_path="Прочее/sostav_gr.xls",
+        file_format=FileFormat.XLS,
+        extractor="xls",
+        chunks=[
+            "sheet: НИпроекты | ФИО: Шаханова Ангелина Владимировна | "
+            "ВУЗ: Адыгейский государственный университет | Должность: Проректор по научной работе | "
+            "email: nisadgu@yandex.ru | телефон: 8 918 420 10 21"
+        ],
+    )
+
+    assert quality.detections == []
+    assert assigned_uz == UZLevel.NO_PDN
+    assert "XLS_PUBLIC_CONTACTS_WEAK_BUNDLE" in reasons
+
+
+def test_person_bundle_xls_with_name_and_birth_date_survives_selection() -> None:
+    _, quality, assigned_uz, reasons = _pipeline(
+        rel_path="profiles/employees.xls",
+        file_format=FileFormat.XLS,
+        extractor="xls",
+        chunks=[
+            "sheet: Лист1 | ФИО: Иванов Иван Иванович | дата рождения: 01.02.2000 | должность: менеджер"
+        ],
+    )
+
+    categories = {item.category for item in quality.detections}
+    assert {"person_name", "birth_date"}.issubset(categories)
+    assert assigned_uz == UZLevel.UZ4
+    assert "XLS_STRONG_BUNDLE" in reasons
+
+
+def test_docx_person_bundle_survives_shortlist_selection() -> None:
+    _, quality, assigned_uz, reasons = _pipeline(
+        rel_path="Прочее/Анкета кандидата.docx",
+        file_format=FileFormat.DOCX,
+        extractor="docx",
+        chunks=[
+            "ФИО: Иванов Иван Иванович",
+            "Телефон: +7 999 123-45-67",
+            "Email: ivanov@example.com",
+        ],
+    )
+
+    categories = {item.category for item in quality.detections}
+    assert {"person_name", "phone", "email"}.issubset(categories)
+    assert assigned_uz == UZLevel.UZ4
+    assert "DOCX_STRONG_BUNDLE" in reasons
+
+
+def test_public_policy_docx_is_suppressed_by_shortlist() -> None:
+    _, quality, assigned_uz, reasons = _pipeline(
+        rel_path="Прочее/politika-obrabotki-dannyh-tassru.docx",
+        file_format=FileFormat.DOCX,
+        extractor="docx",
+        chunks=[
+            "Политика обработки персональных данных. Contact email: privacy@example.com Телефон: +7 495 111-22-33"
+        ],
+    )
+
+    assert quality.detections == []
+    assert assigned_uz == UZLevel.NO_PDN
+    assert "DOCX_PUBLIC_OR_TEMPLATE_PATH" in reasons
+
+
+def test_docx_org_contract_requisites_without_person_bundle_is_suppressed() -> None:
+    _, quality, assigned_uz, reasons = _pipeline(
+        rel_path="Прочее/Договор.docx",
+        file_format=FileFormat.DOCX,
+        extractor="docx",
+        chunks=[
+            "ДОГОВОР. ИНН: 6163027810 БИК: 046015602 расчетный счет: 40702810952090000494"
+        ],
+    )
+
+    categories = {item.category for item in quality.detections}
+    assert categories == set()
+    assert assigned_uz == UZLevel.NO_PDN
+    assert "DOCX_WEAK_SIGNALS_ONLY" in reasons

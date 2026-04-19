@@ -1,49 +1,39 @@
 # Roadmap
 
-## v0.1.0
+## Submission Baseline
 
-- Локальный production-like каркас под `venv` и `Python 3.11+`.
-- CLI `pdn-scan` с командами `scan`, `validate-config`, `version`.
-- YAML configs и typed config loader.
-- Walker, format detection, extractor dispatcher.
-- Рабочие extractors `txt/csv/json/html`.
-- Stub extractors для остальных форматов.
-- Baseline detectors `email/phone/card/SNILS/INN`.
-- Валидаторы `Luhn`, `СНИЛС`, `ИНН`.
-- Explainable UZ engine.
-- Privacy-safe reporting в `CSV/JSON/Markdown`.
-- Unit tests + CLI smoke test.
+Финальный submission-проход описан в [SUBMISSION.md](/Users/shttrkk/Downloads/ПДнDataset/SUBMISSION.md).
 
-## v0.2.0
+Зафиксированное состояние:
 
-- Реальные extractors: `pdf`, `docx`, `rtf`, `xls/xlsx`, `parquet`.
-- Более богатый context scoring.
-- Anti-false-positive rules для:
-  - шаблонов документов;
-  - public privacy/rules/terms документов;
-  - шумных HTML.
-- Расширенная агрегация:
-  - `rows_affected`;
-  - `validated_occurrences`;
-  - `unique_hashes`.
-- Улучшенная explainability в JSON report.
+- реальный submission-контур работает на `txt/csv/json/html`
+- решающие улучшения относительно раннего baseline находятся в quality-layer
+- в submission попадают только файлы с итоговым `assigned_uz != NO_PDN`
 
-## v0.3.0
+## v0.1.1 Submission Profile
 
-- Selective OCR для `tif/png/jpg/gif`.
-- OCR fallback для scanned `PDF`.
-- Best-effort legacy `DOC`.
-- Best-effort `MP4` metadata/subtitle/frame hooks.
-- Performance hardening:
-  - bounded memory;
-  - chunked structured scanning;
-  - worker pool;
-  - timeouts / graceful degradation.
+- локальный CLI-проход для подготовки `result.csv`
+- detectors: `email`, `phone`, `person_name`, `address`, `SNILS`, `INN`, `bank_card`, `birth_date_candidate`
+- quality-layer:
+  - template suppression
+  - public-document suppression
+  - reference-data suppression
+  - HTML / JS / token-noise suppression
+  - structured `id/token` noise suppression
+- privacy-safe reporting
+- positive-only export в legacy submission-формат `size,time,name`
 
-## Optional Stretch Goals
+## Pending After Submission
 
-- Goldset и benchmark harness.
-- Resume/incremental scan artifacts.
-- Cross-file correlation по HMAC hashes.
-- Demo dataset и classification fixtures.
-- Более формализованный template/public-doc suppression layer.
+- реальные extractors для `pdf`, `docx`, `rtf`, `xls/xlsx`, `parquet`
+- selective OCR для `tif/png/jpg/gif`
+- scanned PDF fallback
+- legacy `DOC` fallback chain
+- best-effort `MP4` processing
+- performance hardening для больших structured и document-heavy каталогов
+
+## Practical Priority
+
+1. Поддержать document/structured форматы, которые уже перечислены в конфиге, но пока остаются заглушками.
+2. Сохранить текущий precision-first quality-layer при расширении coverage.
+3. Не включать OCR и тяжелые extractors в core path без отдельной проверки влияния на false positives и throughput.

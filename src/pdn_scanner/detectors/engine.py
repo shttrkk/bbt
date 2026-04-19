@@ -39,5 +39,6 @@ class DetectionEngine:
             existing.occurrences += detection.occurrences
             existing.location_hints = sorted(set(existing.location_hints + detection.location_hints))
             existing.context_keywords = sorted(set(existing.context_keywords + detection.context_keywords))
+            existing.matches.extend(detection.matches)
 
         return list(aggregated.values())

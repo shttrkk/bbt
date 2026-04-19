@@ -25,7 +25,7 @@ scan:
 
 feature_flags:
   include_masked_samples: true
-  enable_sensitive_detectors: false
+  enable_sensitive_detectors: true
   enable_template_heuristics: true
   enable_ocr: false
 

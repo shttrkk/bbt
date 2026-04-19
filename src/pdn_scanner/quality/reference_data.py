@@ -86,7 +86,7 @@ def detect_reference_data(
 def _is_strong_personal_detection(detection: DetectionResult) -> bool:
     if detection.family in {"government", "payment"} and detection.validation_status == ValidationStatus.VALID:
         return True
-    return detection.category in {"person_name", "address"} and detection.confidence in {
+    return detection.category in {"person_name", "address", "birth_date", "birth_place"} and detection.confidence in {
         ConfidenceLevel.HIGH,
         ConfidenceLevel.MEDIUM,
     }

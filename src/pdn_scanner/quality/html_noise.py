@@ -29,6 +29,45 @@ NOISE_MARKERS = (
     "return ",
 )
 WEB_DOC_MARKERS = ("meta", "canonical", "viewport", "stylesheet", "generator", "theme-color", "journal")
+PUBLIC_WEB_MARKERS = (
+    "livejournal",
+    "жж",
+    "follow us",
+    "top interesting",
+    "checklist",
+    "applications ios",
+    "android",
+    "huawei",
+    "telegram",
+    "twitter",
+    "vkontakte",
+    "user agreement",
+    "comments",
+    "tags",
+    "rss",
+    "atom",
+)
+PUBLIC_WEB_SUPPRESSED_CATEGORIES = {
+    "address",
+    "email",
+    "birth_date",
+    "birth_place",
+    "passport_series",
+    "passport_number",
+    "passport_series_number",
+    "driver_license",
+    "mrz",
+    "health_data",
+    "religious_beliefs",
+    "political_beliefs",
+    "race_data",
+    "nationality_data",
+    "special_category_other",
+    "fingerprints",
+    "iris_pattern",
+    "voice_print",
+    "face_geometry",
+}
 
 
 def is_html_noise_chunk(chunk: str) -> bool:
@@ -40,9 +79,20 @@ def is_html_noise_chunk(chunk: str) -> bool:
     return marker_hits >= 2 or long_tokens >= 3 or ratio >= 0.08
 
 
+def is_public_web_page(chunk: str) -> bool:
+    lowered = chunk.lower()
+    hits = sum(1 for marker in PUBLIC_WEB_MARKERS if marker in lowered)
+    return hits >= 3
+
+
 def should_suppress_html_detection(detection: DetectionResult, chunk: str) -> bool:
     lowered = chunk.lower()
-    if detection.category in {"inn", "snils", "bank_card", "phone"} and (
+    public_web_page = is_public_web_page(chunk)
+
+    if public_web_page and detection.category in PUBLIC_WEB_SUPPRESSED_CATEGORIES:
+        return True
+
+    if detection.category in {"inn_individual", "inn_legal_entity", "snils", "bank_card", "phone"} and (
         UUID_RE.search(chunk) or LONG_TOKEN_RE.search(chunk) or "token" in lowered
     ):
         return True

@@ -49,7 +49,7 @@ def detect_public_doc(path: str, text: str, detections: list[DetectionResult]) -
 
 
 def _is_subject_signal(detection: DetectionResult) -> bool:
-    return detection.category in {"person_name", "address", "birth_date_candidate"} and detection.confidence in {
+    return detection.category in {"person_name", "address", "birth_date", "birth_place"} and detection.confidence in {
         ConfidenceLevel.HIGH,
         ConfidenceLevel.MEDIUM,
     }

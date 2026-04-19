@@ -2,6 +2,33 @@
 
 Формат ориентирован на Keep a Changelog.
 
+## [0.1.1] - 2026-04-19
+
+### Changed
+
+- markdown-документация синхронизирована с актуальным `SUBMISSION.md`
+- в docs зафиксирован реальный submission-контур вместо старого roadmap-состояния
+- явно разделены:
+  - что реально использовалось в submission
+  - что присутствует в коде как hook или stub
+
+### Submission Baseline
+
+- пайплайн зафиксирован как `scan -> detect format -> dispatch extractor -> normalize -> detect -> quality-layer -> classify -> report`
+- в submission реально используются extractors `txt`, `csv`, `json`, `html`
+- detectors: `email`, `phone`, `person_name`, `address`, `SNILS`, `INN`, `bank_card`, `birth_date_candidate`
+- `result.csv` собирается только из positive-файлов с `assigned_uz != NO_PDN`
+
+### Quality Layer
+
+- зафиксированы флаги `is_template`, `is_public_doc`, `is_reference_data`
+- в документации отражено suppression-поведение для HTML/JS/token noise и structured `id/token` noise
+
+### Not Part Of Current Submission
+
+- `pdf/docx/xls/parquet/ocr` не описываются как полноценные источники текущего submission-результата
+- legacy `DOC`, `MP4` и тяжелые document pipelines остаются на следующих этапах
+
 ## [0.1.0] - 2026-04-18
 
 ### Added
@@ -14,31 +41,5 @@
 - extractors для `txt`, `csv`, `json`, `html`
 - stub extractors для `pdf/docx/rtf/xls/parquet/image/doc/mp4`
 - detectors для `email`, `phone`, `card`, `SNILS`, `INN`
-- валидаторы `Luhn`, `СНИЛС`, `ИНН`
 - explainable `UZ` classifier
 - privacy-safe reporters `CSV`, `JSON`, `Markdown`
-- unit и smoke tests
-
-### Changed
-
-- `ocr.mode` в YAML-профилях зафиксирован как string, чтобы config loader не падал
-- `report.json` больше не сериализует `extraction.text_chunks`
-- phone/card/government detectors ужесточены против timestamp/UUID/identifier false positives
-- ordinary detectors расширены schema-aware detection для `person_name` и `address`
-- добавлены regression tests на false-positive / false-negative кейсы датасета
-
-### Planned
-
-- реальные extractors для `pdf/docx/rtf/xls/parquet`
-- anti-false-positive heuristics
-- selective OCR
-- legacy `DOC` and best-effort `MP4`
-- worker pool и performance tuning
-
-### Not Yet Implemented
-
-- OCR в core pipeline
-- scanned PDF fallback
-- public-doc suppression layer
-- template-aware downscoring
-- chunked parquet/xls processing

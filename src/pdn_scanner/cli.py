@@ -17,6 +17,7 @@ from pdn_scanner.quality import QualityLayer
 from pdn_scanner.reporting import write_json_report, write_markdown_report, write_result_csv, write_summary_csv
 from pdn_scanner.runtime import ScanMetrics, setup_logging, to_processing_error
 from pdn_scanner.scanner import ExtractorDispatcher, detect_format, walk_directory
+from pdn_scanner.submission import apply_cross_file_promotion
 from pdn_scanner.version import __version__
 
 app = typer.Typer(help="Privacy-safe CLI scanner for personal data discovery.")
@@ -68,6 +69,8 @@ def scan(
             if not cfg.scan.continue_on_error:
                 raise typer.Exit(code=1) from exc
 
+    results = apply_cross_file_promotion(results, cfg)
+
     for result in results:
         metrics.record_file_result(result)
 
@@ -92,7 +95,7 @@ def scan(
         duration_seconds=(finished_at - started_at).total_seconds(),
         notes=[
             "reports exclude raw PII",
-            "OCR is not part of the v0.1.0 default execution path",
+            "OCR is not part of the v0.1.1 default execution path",
         ],
     )
 

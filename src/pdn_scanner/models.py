@@ -29,15 +29,29 @@ class ExtractedContent(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class DetectionMatch(BaseModel):
+    chunk_index: int
+    start_char: int
+    end_char: int
+    fragment: str
+
+
 class DetectionResult(BaseModel):
     category: str
     family: str
+    entity_category: str
+    entity_subtype: str
     detector_id: str
     confidence: ConfidenceLevel
     validation_status: ValidationStatus = ValidationStatus.UNKNOWN
     value_hash: str | None = None
     masked_preview: str | None = None
     occurrences: int = 1
+    chunk_index: int | None = None
+    start_char: int | None = None
+    end_char: int | None = None
+    source_fragment: str | None = None
+    matches: list[DetectionMatch] = Field(default_factory=list)
     location_hints: list[str] = Field(default_factory=list)
     context_keywords: list[str] = Field(default_factory=list)
     raw_value: str | None = Field(default=None, exclude=True)

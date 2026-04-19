@@ -57,6 +57,14 @@ def test_cli_scan_generates_privacy_safe_reports(tmp_path: Path) -> None:
     assert "is_template" in file_result
     assert "is_public_doc" in file_result
     assert "is_reference_data" in file_result
+    assert file_result["detections"]
+    first_detection = file_result["detections"][0]
+    assert "entity_category" in first_detection
+    assert "entity_subtype" in first_detection
+    assert "source_fragment" in first_detection
+    assert "start_char" in first_detection
+    assert "end_char" in first_detection
+    assert "matches" in first_detection
     assert "user@example.com" not in serialized
     assert "112-233-445 95" not in serialized
     assert "4111 1111 1111 1111" not in serialized
